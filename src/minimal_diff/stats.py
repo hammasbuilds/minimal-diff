@@ -9,9 +9,19 @@ task of each drawn problem - does not.
 
 from __future__ import annotations
 
+import functools
 import random
 from collections import defaultdict
 from collections.abc import Callable, Sequence
+
+
+@functools.lru_cache(maxsize=64)
+def _draws(m: int, n_boot: int, seed: int) -> tuple[tuple[int, ...], ...]:
+    """The bootstrap resamples for `m` clusters. Cached: a report computes hundreds of rates
+    over the same problems, and drawing the indices dominated its run time. The sequence is
+    the same one a fresh `random.Random(seed)` gives, so results do not change."""
+    rng = random.Random(seed)
+    return tuple(tuple(rng.randrange(m) for _ in range(m)) for _ in range(n_boot))
 
 
 def cluster_rate(
@@ -39,13 +49,11 @@ def cluster_rate(
     counts = [len(groups[k]) for k in keys]
     rate = sum(sums) / n
     per_problem = sum(s / c for s, c in zip(sums, counts, strict=True)) / len(keys)
-    rng = random.Random(seed)
-    boots = []
     m = len(keys)
-    for _ in range(n_boot):
-        idx = [rng.randrange(m) for _ in range(m)]
-        tot = sum(counts[i] for i in idx)
-        boots.append(sum(sums[i] for i in idx) / tot)
+    boots = []
+    for idx in _draws(m, n_boot, seed):
+        tot = sum(map(counts.__getitem__, idx))
+        boots.append(sum(map(sums.__getitem__, idx)) / tot)
     boots.sort()
     lo, hi = boots[int(0.025 * n_boot)], boots[int(0.975 * n_boot) - 1]
     return {
