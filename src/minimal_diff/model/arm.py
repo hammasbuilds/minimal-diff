@@ -120,7 +120,8 @@ def run(jobs: list[Job], client: Client, out: Path, progress: bool = True) -> in
         if progress and i % 25 == 0:
             print(f"  {i}/{len(jobs)} replies scored", flush=True)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows), encoding="utf-8")
+    text = "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows)
+    out.write_text(text, encoding="utf-8", newline="\n")
     return len(rows)
 
 

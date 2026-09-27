@@ -81,7 +81,7 @@ def cmd_report(a: argparse.Namespace) -> int:
     summary = arm.summarise(rows, classical)
     summary["model"] = a.model
     out = data.results_dir() / f"model_arm_{_safe(a.model)}.json"
-    out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    data.write_json(out, summary)
     from ..stats import fmt
 
     cols = f"{'plausible':<22}{'exact':<22}{'overfit':<22}{'tokens':>7}{'unrelated':>24}"

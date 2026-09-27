@@ -32,6 +32,12 @@ def data_dir() -> Path:
     return Path(env) if env else ROOT / "data"
 
 
+def write_json(path: Path, obj: object) -> None:
+    """Pretty JSON with LF line endings, so a rerun on Windows is byte-identical in git."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
 def results_dir() -> Path:
     """Where results are read and written; `MINIMAL_DIFF_RESULTS` overrides `results/`."""
     env = os.environ.get("MINIMAL_DIFF_RESULTS")

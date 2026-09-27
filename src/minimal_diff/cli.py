@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import json
 import re
 import statistics
 import sys
@@ -34,8 +33,7 @@ def cmd_build_tasks(a: argparse.Namespace) -> int:
         tasks.save(tasks.tasks_path(source), ts, prov)
         print(f"  {st}")
         summary = data.results_dir() / f"tasks_{source}.json"
-        summary.parent.mkdir(parents=True, exist_ok=True)
-        summary.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+        data.write_json(summary, prov)
     return 0
 
 
@@ -64,7 +62,7 @@ def cmd_check_isolation(a: argparse.Namespace) -> int:
         probs.update(tasks.load_problems(source))
     res = isolation.check(ts, probs, n_tasks=a.tasks, per_task=a.per_task, workers=a.workers)
     out = data.results_dir() / "isolation_check.json"
-    out.write_text(json.dumps(res, indent=2) + "\n", encoding="utf-8")
+    data.write_json(out, res)
     print(
         f"{res['candidates']} candidates from {res['tasks']} tasks re-run in a fresh interpreter: "
         f"{res['agree']} agree, {res['disagree']} disagree "
@@ -104,7 +102,7 @@ def cmd_report(a: argparse.Namespace) -> int:
                 "problems_with_none": sum(h == 0 for h, _ in counts),
             }
     out = data.results_dir() / "classical_repair.json"
-    out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    data.write_json(out, summary)
     for source, s in summary.items():
         print(
             f"\n== {source}: {s['tasks']} tasks over {s['problems']} problems, "
