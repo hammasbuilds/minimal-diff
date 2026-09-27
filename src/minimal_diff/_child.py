@@ -76,8 +76,15 @@ def _emit(obj: dict) -> None:
     _OUT.flush()
 
 
-def _same(a: object, b: object) -> bool:
-    """Equality the way a test author means it: floats within tolerance, NaN equals NaN."""
+def _same(a: object, b: object, depth: int = 0) -> bool:
+    """Equality the way a test author means it: floats within tolerance, NaN equals NaN.
+
+    The reference and the patch are executed separately, so a class either one defines is
+    two distinct classes. Instances of "the same" class are compared by class name and
+    attributes; `==` alone would call every such return value a difference.
+    """
+    if depth > 50:  # a cyclic structure: give up the structural walk, fall back to ==
+        return _eq(a, b)
     if isinstance(a, bool) or isinstance(b, bool):
         return type(a) is type(b) and a == b
     if isinstance(a, int | float) and isinstance(b, int | float):
@@ -87,11 +94,27 @@ def _same(a: object, b: object) -> bool:
             return math.isclose(a, b, rel_tol=1e-6, abs_tol=1e-9)
         return a == b
     if isinstance(a, list | tuple) and isinstance(b, list | tuple):
-        return type(a) is type(b) and len(a) == len(b) and all(map(_same, a, b))
+        return (
+            type(a) is type(b)
+            and len(a) == len(b)
+            and all(_same(x, y, depth + 1) for x, y in zip(a, b, strict=True))
+        )
     if isinstance(a, dict) and isinstance(b, dict):
-        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
-    if type(a) is not type(b):
+        return a.keys() == b.keys() and all(_same(a[k], b[k], depth + 1) for k in a)
+    ta, tb = type(a), type(b)
+    if ta.__qualname__ == tb.__qualname__ and hasattr(a, "__dict__") and hasattr(b, "__dict__"):
+        # Two instances of "the same" program-defined class. Their own `__eq__` decides
+        # if they share a class that defines one; otherwise object identity would call
+        # every pair different, so compare attributes.
+        if ta is tb and ta.__eq__ is not object.__eq__:
+            return _eq(a, b)
+        return _same(vars(a), vars(b), depth + 1)
+    if ta is not tb:
         return False
+    return _eq(a, b)
+
+
+def _eq(a: object, b: object) -> bool:
     try:
         return bool(a == b)
     except Exception:
@@ -160,9 +183,7 @@ def _call(ns: dict, fn: str, args_src: str) -> tuple[str, object]:
 def _run_compare(nss: _Namespaces, ctx: dict, item: dict) -> dict:
     """Call the reference and the candidate on one input and say whether they agree."""
     ref_ns = nss.get(ctx["ref"])
-    t0 = time.perf_counter()
     rs, rv = _call(ref_ns, ctx["fn"], item["input"])
-    ref_s = time.perf_counter() - t0
     try:
         cand_ns = nss.get(item["code"])
     except ItemTimeout:
@@ -170,7 +191,7 @@ def _run_compare(nss: _Namespaces, ctx: dict, item: dict) -> dict:
     except BaseException as e:
         return {"status": "differs", "ref": _show(rs, rv), "cand": f"load: {type(e).__name__}"}
     cs, cv = _call(cand_ns, ctx["fn"], item["input"])
-    out = {"ref_status": rs, "ref_s": round(ref_s, 6)}
+    out = {"ref_status": rs}
     if rs == cs and (rs == "raise" and rv == cv or rs == "ok" and _same(rv, cv)):
         out["status"] = "same"
     else:
@@ -183,15 +204,19 @@ def _show(status: str, value: object) -> str:
 
 
 def _guarded(watchdog: _Watchdog, seconds: float, run, *args) -> dict:
+    """Run one item under the watchdog; the result carries how long the whole item took."""
+    t0 = time.perf_counter()
     try:
         watchdog.arm(seconds)
         try:
-            return run(*args)
+            res = run(*args)
         finally:
             watchdog.disarm()
     except ItemTimeout:
         watchdog.disarm()
-        return {"status": "timeout"}
+        res = {"status": "timeout"}
+    res["s"] = round(time.perf_counter() - t0, 6)
+    return res
 
 
 def run_job(job: dict, watchdog: _Watchdog) -> None:

@@ -8,17 +8,21 @@ assert: every regime that contains that assert rejects it, and every regime that
 not contains only asserts it already passed. Nothing is run twice and no verdict is
 guessed.
 
-Which plausible patch the repairer returns is a *policy*:
+Which plausible patch the repairer returns is a *policy*: a size metric (`METRICS`) and
+a tie-break.
 
-- `smallest`: fewest tokens changed, then fewest AST nodes, then fewest lines, then the
-  earliest site. "The laziest senior dev".
-- `random`: a uniformly random plausible patch; reported as an expectation over the
-  plausible set, not as one draw.
-- `smallest` with a random tie-break (`tied_*`): nearly every one-edit patch is one
-  token, so `smallest` mostly decides by site order. This separates the two.
-- `at_fault`: `smallest`, but only among patches that edit the faulty lines and nothing
-  else. An oracle - no real repairer knows where the bug is - that separates "the tests
-  cannot tell" from "the search looked in the wrong place".
+- **size metric**: `tokens` (fewest tokens changed), `ast` (fewest AST nodes), `lines`,
+  or a lexicographic combination (`tokens+ast`, `ast+tokens`). They disagree exactly
+  where it matters: removing a `not` is one token but two AST nodes, while swapping a
+  comparison is one of each - so `tokens+ast` ranks every un-negation below every
+  operator swap, and `tokens` does not.
+- **site order** tie-break: the earliest edit site wins. Deterministic, and arbitrary.
+- **random** tie-break (`tied_*`): the expectation over the tied set, so site order
+  cannot pass for a size effect.
+- `random` over *all* plausible patches: the no-preference baseline.
+- `at_fault`: the default metric, but only among patches that edit the faulty lines and
+  nothing else. An oracle - no real repairer knows where the bug is - that separates
+  "the tests cannot tell" from "the search looked in the wrong place".
 """
 
 from __future__ import annotations
@@ -27,6 +31,17 @@ from dataclasses import asdict, dataclass, field
 
 from . import diffmetrics, operators, oracle, sandbox
 from .tasks import ProblemRecord, Task
+
+METRICS: dict[str, tuple[str, ...]] = {
+    "tokens": ("tokens",),
+    "ast": ("ast_nodes",),
+    "lines": ("lines",),
+    "tokens+ast": ("tokens", "ast_nodes"),
+    "ast+tokens": ("ast_nodes", "tokens"),
+}
+# What `show`, the demo and the `smallest` fields of a results row use. Fewest tokens
+# changed is the plain reading of "the fix that changes the least".
+DEFAULT_METRIC = "tokens"
 
 
 @dataclass
@@ -41,14 +56,12 @@ class Candidate:
     found_by: str = ""
     is_truth: bool = False
 
-    def order_key(self) -> tuple:
-        s = self.size
-        return (
-            s["tokens"],
-            s["ast_nodes"] if s["ast_nodes"] is not None else 10**6,
-            s["lines"],
-            self.index,
-        )
+    def size_key(self, metric: str = DEFAULT_METRIC) -> tuple:
+        return tuple(self.size[f] if self.size[f] is not None else 10**6 for f in METRICS[metric])
+
+    def order_key(self, metric: str = DEFAULT_METRIC) -> tuple:
+        """Size first, then site order."""
+        return (*self.size_key(metric), self.index)
 
 
 def visible_subsets(task: Task, n_tests: int) -> dict[str, list[int]]:
@@ -63,7 +76,9 @@ def visible_subsets(task: Task, n_tests: int) -> dict[str, list[int]]:
     return {"k1": order[:1], "k3": order[:3], "all": order}
 
 
-def select(cands: list[Candidate], subset: list[int], policy: str) -> Candidate | None:
+def select(
+    cands: list[Candidate], subset: list[int], policy: str, metric: str = DEFAULT_METRIC
+) -> Candidate | None:
     plausible = [c for c in cands if all(c.passes[i] for i in subset)]
     if policy == "at_fault":
         plausible = [
@@ -71,7 +86,43 @@ def select(cands: list[Candidate], subset: list[int], policy: str) -> Candidate 
         ]
     elif policy != "smallest":
         raise ValueError(f"unknown policy {policy!r}")
-    return min(plausible, key=Candidate.order_key, default=None)
+    return min(plausible, key=lambda c: c.order_key(metric), default=None)
+
+
+def _pick(c: Candidate | None) -> dict | None:
+    if c is None:
+        return None
+    return {
+        "where": c.where,
+        "kind": c.kind,
+        "verdict": c.verdict,
+        "found_by": c.found_by,
+        "is_truth": c.is_truth,
+        "size": c.size,
+    }
+
+
+def _metric_summary(plausible: list[Candidate], metric: str) -> dict:
+    best = min(c.size_key(metric) for c in plausible)
+    tied = [c for c in plausible if c.size_key(metric) == best]
+    site = min(plausible, key=lambda c: c.order_key(metric))
+    out = {
+        "site_verdict": site.verdict,
+        "n_tied": len(tied),
+        "tied_exact": sum(c.verdict == "exact" for c in tied) / len(tied),
+        "tied_overfit": sum(c.verdict == "overfit" for c in tied) / len(tied),
+    }
+    truth = [c for c in plausible if c.is_truth]
+    if truth:
+        t = truth[0].size_key(metric)
+        out["truth_strictly_smallest"] = all(
+            c.is_truth or c.size_key(metric) > t for c in plausible
+        )
+        # Is there a provably wrong patch at least as small as the right one?
+        out["overfit_as_small_as_truth"] = any(
+            c.verdict == "overfit" and c.size_key(metric) <= t for c in plausible
+        )
+    return out
 
 
 def summarise_subset(cands: list[Candidate], subset: list[int]) -> dict:
@@ -81,40 +132,11 @@ def summarise_subset(cands: list[Candidate], subset: list[int]) -> dict:
         n = len(plausible)
         out["random_exact"] = sum(c.verdict == "exact" for c in plausible) / n
         out["random_overfit"] = sum(c.verdict == "overfit" for c in plausible) / n
-        out["min_tokens"] = min(c.size["tokens"] for c in plausible)
-        best = min(x.order_key() for x in plausible)[:3]
-        tied = [c for c in plausible if c.order_key()[:3] == best]
-        out["n_tied_smallest"] = len(tied)
-        # `smallest` breaks ties by site order; this is the same policy with a random
-        # tie-break, as an expectation, so site order cannot pass for a size effect.
-        out["tied_exact"] = sum(c.verdict == "exact" for c in tied) / len(tied)
-        out["tied_overfit"] = sum(c.verdict == "overfit" for c in tied) / len(tied)
-        truth = [c for c in plausible if c.is_truth]
-        out["truth_plausible"] = bool(truth)
-        if truth:
-            # Is there a wrong patch at least as small as the right one?
-            t = truth[0].order_key()[:3]
-            out["overfit_as_small_as_truth"] = any(
-                c.verdict == "overfit" and c.order_key()[:3] <= t for c in plausible
-            )
-    for policy in ("smallest", "at_fault"):
-        pick = select(cands, subset, policy)
-        out[policy] = (
-            None
-            if pick is None
-            else {
-                "where": pick.where,
-                "kind": pick.kind,
-                "verdict": pick.verdict,
-                "found_by": pick.found_by,
-                "is_truth": pick.is_truth,
-                "size": pick.size,
-            }
-        )
+        out["truth_plausible"] = any(c.is_truth for c in plausible)
+        out["by_metric"] = {m: _metric_summary(plausible, m) for m in METRICS}
+    out["smallest"] = _pick(select(cands, subset, "smallest"))
+    out["at_fault"] = _pick(select(cands, subset, "at_fault"))
     return out
-
-
-REPAIR_ITEM_TIMEOUT = 1.0  # an MBPP/HumanEval assert on a correct program takes milliseconds
 
 
 def run_in_order(
@@ -137,14 +159,13 @@ def run_in_order(
     return rows
 
 
-def repair_task(
-    task: Task, problem: ProblemRecord, item_timeout: float = REPAIR_ITEM_TIMEOUT
-) -> dict:
+def repair_task(task: Task, problem: ProblemRecord, item_timeout: float | None = None) -> dict:
     """Search, judge and summarise one task. The returned dict is one results row."""
     edits = operators.neighbours(task.buggy)
     tests = problem.tests
     subsets = visible_subsets(task, len(tests))
-    rows = run_in_order([e.code for e in edits], problem, subsets["all"], item_timeout)
+    budget = problem.item_budget if item_timeout is None else item_timeout
+    rows = run_in_order([e.code for e in edits], problem, subsets["all"], budget)
     cands = [
         Candidate(i, e.where, e.kind, [r.status == "pass" for r in row])
         for i, (e, row) in enumerate(zip(edits, rows, strict=True))

@@ -30,7 +30,7 @@ def check(
         prob = problems[task.problem]
         codes = [e.code for e in operators.neighbours(task.buggy)]
         order = repair.visible_subsets(task, len(prob.tests))["all"]
-        pooled = repair.run_in_order(codes, prob, order, repair.REPAIR_ITEM_TIMEOUT)
+        pooled = repair.run_in_order(codes, prob, order, prob.item_budget)
         chosen = random.Random(f"{seed}/{task.id}").sample(
             range(len(codes)), min(per_task, len(codes))
         )
@@ -38,7 +38,7 @@ def check(
         for ci in chosen:
             tests = [prob.tests[i] for i in order]
             [alone] = sandbox.run_asserts(
-                [codes[ci]], tests, prob.setup, item_timeout=repair.REPAIR_ITEM_TIMEOUT, fresh=True
+                [codes[ci]], tests, prob.setup, item_timeout=prob.item_budget, fresh=True
             )
             a = [pooled[ci][i].status for i in order]
             b = [r.status for r in alone]

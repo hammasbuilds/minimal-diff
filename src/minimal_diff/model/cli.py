@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
 from .. import data, study, tasks
@@ -85,7 +84,7 @@ def cmd_report(a: argparse.Namespace) -> int:
     if not path.exists():
         print(f"no {path.name}: run `minimal-diff model run` first", file=sys.stderr)
         return 1
-    rows = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    rows = arm.read_rows(path)
     classical = {
         r["id"]: r
         for source in ("mbpp", "humaneval")

@@ -63,3 +63,11 @@ def fmt(r: dict) -> str:
         return "n/a"
     lo, hi = r["ci95"]
     return f"{100 * r['rate']:.1f}% [{100 * lo:.1f}, {100 * hi:.1f}]"
+
+
+def fmt_pp(r: dict) -> str:
+    """A paired difference in percentage points: `+1.8 pp [+1.0, +2.6]`."""
+    if not r or r.get("rate") is None:
+        return "n/a"
+    lo, hi = r["ci95"]
+    return f"{100 * r['rate']:+.1f} pp [{100 * lo:+.1f}, {100 * hi:+.1f}]"

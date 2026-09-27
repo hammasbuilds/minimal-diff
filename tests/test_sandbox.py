@@ -132,3 +132,19 @@ def test_compare_arguments_may_name_what_the_program_or_setup_defines():
     assert [r.status for r in rows[0]] == ["same", "same"]
     assert rows[0][0].ref_status == "ok"
     assert rows[1][0].status == "differs"
+
+
+def test_instances_of_the_programs_own_classes_compare_by_value():
+    """Reference and patch are exec'd separately, so `Pair` is two distinct classes."""
+    ref = "class Pair:\n    def __init__(self, a):\n        self.a = a\ndef mk(x):\n    return [Pair(x)]\n"
+    other = ref.replace("Pair(x)", "Pair(x + 1)")
+    rows = sandbox.run_compare(ref, "mk", [ref, other], ["3"])
+    assert rows[0][0].status == "same"
+    assert rows[1][0].status == "differs"
+
+
+def test_every_item_reports_how_long_it_took():
+    rows = sandbox.run_asserts(
+        ["import time\ndef f(x):\n    time.sleep(0.2)\n    return x + 1\n"], ["assert f(1) == 2"]
+    )
+    assert 0.15 < rows[0][0].seconds < 5

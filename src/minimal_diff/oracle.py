@@ -26,25 +26,50 @@ from .tasks import ProblemRecord
 class Verdict:
     label: str  # exact | overfit | no_witness
     witness: str = ""  # which check separated it, and how
-    # "visible" | "hidden_assert" | "near_input" | "fuzz_input" | "hang": which check found
-    # it. "hang" is a patch that did not finish on a hidden input the reference answers in
-    # under tasks.VET_MAX_REF_SECONDS.
+    # Which check found it: "visible" | "hidden_assert" | "near_input" | "fuzz_input" for a
+    # wrong answer or a wrong exception; "hang" for a patch that ran out the item budget
+    # even at RECHECK_FACTOR times it; "crash" for one that killed the interpreter.
     found_by: str = ""
+
+
+# A timeout at the normal budget is re-run at this many times the budget before it is
+# accepted as a witness, so "overfit" never rests on a machine that was merely busy.
+RECHECK_FACTOR = 10
+
+
+def _how(status: str) -> str:
+    return {"timeout": "hang", "crash": "crash"}.get(status, "")
 
 
 def judge(
     problem: ProblemRecord,
     patches: Sequence[str],
     visible_rows: Sequence[Sequence[sandbox.Result]] | None = None,
-    item_timeout: float = sandbox.ITEM_TIMEOUT,
+    item_timeout: float | None = None,
 ) -> list[Verdict]:
     """A verdict for every patch.
 
     `visible_rows`, when given, are each patch's results on `problem.tests` in the
     problem's own order (unreached asserts `skipped`), so they are not run twice. A patch
     shown only some of the visible asserts can still be proven wrong by the ones it was
-    not shown.
+    not shown. `item_timeout` defaults to the problem's own budget.
     """
+    budget = problem.item_budget if item_timeout is None else item_timeout
+    out = _judge(problem, patches, visible_rows, budget)
+    redo = [i for i, v in enumerate(out) if v.found_by in ("hang", "crash")]
+    if redo:
+        again = _judge(problem, [patches[i] for i in redo], None, budget * RECHECK_FACTOR)
+        for i, v in zip(redo, again, strict=True):
+            out[i] = v
+    return out
+
+
+def _judge(
+    problem: ProblemRecord,
+    patches: Sequence[str],
+    visible_rows: Sequence[Sequence[sandbox.Result]] | None,
+    budget: float,
+) -> list[Verdict]:
     ref = problem.reference
     out: list[Verdict | None] = [None] * len(patches)
     todo: list[int] = []
@@ -58,7 +83,7 @@ def judge(
 
     if visible_rows is None:
         rows = sandbox.run_asserts(
-            [patches[i] for i in todo], problem.tests, problem.setup, item_timeout=item_timeout
+            [patches[i] for i in todo], problem.tests, problem.setup, item_timeout=budget
         )
     else:
         rows = [visible_rows[i] for i in todo]
@@ -67,7 +92,8 @@ def judge(
         bad = sandbox.first_failure(row)
         if bad is not None:
             k = row.index(bad)
-            out[i] = Verdict("overfit", f"visible assert {k} -> {bad.status}", "visible")
+            found = _how(bad.status) or "visible"
+            out[i] = Verdict("overfit", f"visible assert {k} -> {bad.status}", found)
         else:
             remaining.append(i)
 
@@ -76,14 +102,15 @@ def judge(
             [patches[i] for i in remaining],
             problem.hidden_tests,
             problem.setup,
-            item_timeout=item_timeout,
+            item_timeout=budget,
         )
         still = []
         for i, row in zip(remaining, rows, strict=True):
             bad = sandbox.first_failure(row)
             if bad is not None:
+                found = _how(bad.status) or "hidden_assert"
                 out[i] = Verdict(
-                    "overfit", f"hidden assert {row.index(bad)} -> {bad.status}", "hidden_assert"
+                    "overfit", f"hidden assert {row.index(bad)} -> {bad.status}", found
                 )
             else:
                 still.append(i)
@@ -96,7 +123,7 @@ def judge(
             [patches[i] for i in remaining],
             problem.hidden_inputs,
             problem.setup,
-            item_timeout=item_timeout,
+            item_timeout=budget,
         )
         for i, row in zip(remaining, rows, strict=True):
             bad = sandbox.first_failure(row, ok="same")
@@ -108,12 +135,10 @@ def judge(
             arg = arg if len(arg) <= 120 else arg[:117] + "..."
             if bad.status == "differs":
                 how = f"{problem.entry_point}({arg}): reference {bad.ref}, patch {bad.cand}"
+                found = "near_input" if k < problem.n_near_inputs else "fuzz_input"
             else:
                 how = f"{problem.entry_point}({arg}): patch {bad.status}"
-            if bad.status != "differs":
-                found = "hang"
-            else:
-                found = "near_input" if k < problem.n_near_inputs else "fuzz_input"
+                found = _how(bad.status)
             out[i] = Verdict("overfit", how, found)
     for i in remaining:
         if out[i] is None:

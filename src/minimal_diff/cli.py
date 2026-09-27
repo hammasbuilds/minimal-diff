@@ -9,9 +9,11 @@ import statistics
 import sys
 from pathlib import Path
 
-from . import data, isolation, operators, repair, stats, study, tasks
+from . import data, isolation, operators, repair, stats, study, tasks, userfix
 
 SOURCES = ("mbpp", "humaneval")
+SOURCE_HELP = "which benchmark (default: both)"
+WORKERS_HELP = "parallel worker processes, each capped at 512 MB (default 8)"
 
 
 def _sources(arg: str) -> tuple[str, ...]:
@@ -73,9 +75,8 @@ def cmd_check_isolation(a: argparse.Namespace) -> int:
 
 
 REPORT_COLUMNS = (
-    ("smallest exact", "smallest_exact"),
-    ("smallest OVERFIT", "smallest_overfit"),
-    ("smallest, random tie", "tied_overfit"),
+    ("exact", "smallest_exact"),
+    ("OVERFIT", "smallest_overfit"),
     ("any plausible", "random_overfit"),
     ("at-fault oracle", "at_fault_overfit"),
 )
@@ -109,13 +110,49 @@ def cmd_report(a: argparse.Namespace) -> int:
             f"{s['mean_candidates']} one-edit candidates per task"
         )
         print(f"   known fix inside the search space: {stats.fmt(s['truth_in_space'])}")
-        print("   rates of the returned patch, 95% cluster-bootstrap CI; overfit unless noted")
+        print(
+            f"   smallest by {repair.DEFAULT_METRIC}, ties by site order; "
+            "95% cluster-bootstrap CI; overfit unless noted"
+        )
         head = "".join(f"{h:<22}" for h, _ in REPORT_COLUMNS)
         print(f"   {'shown':<6}{'tests':>6}{'plaus.':>8}  {head}")
         for g, r in s["regimes"].items():
             cells = "".join(f"{stats.fmt(r[k]):<22}" for _, k in REPORT_COLUMNS)
             print(f"   {g:<6}{r['mean_visible_tests']:>6}{r['mean_plausible']:>8}  {cells}")
+        r = s["regimes"]["all"]
+        print("   every size metric, all visible asserts; last column paired vs any plausible:")
+        print(
+            f"   {'metric':<12}{'site-order exact':<22}{'site-order overfit':<22}"
+            f"{'random-tie overfit':<22}{'site - any, overfit':<26}"
+        )
+        for m, t in r["by_metric"].items():
+            print(
+                f"   {m:<12}{stats.fmt(t['site_exact']):<22}{stats.fmt(t['site_overfit']):<22}"
+                f"{stats.fmt(t['tie_overfit']):<22}"
+                f"{stats.fmt_pp(t['diff_overfit_site_minus_random']):<26}"
+            )
     print(f"\nwrote {out}")
+    return 0
+
+
+def cmd_fix(a: argparse.Namespace) -> int:
+    try:
+        source = Path(a.program).read_text(encoding="utf-8")
+        tests = list(a.asserts or [])
+        if a.tests:
+            tests += userfix.read_asserts(Path(a.tests).read_text(encoding="utf-8"))
+        if not tests:
+            print(
+                "give the asserts to repair against: --tests FILE and/or --assert STMT",
+                file=sys.stderr,
+            )
+            return 2
+        setup = Path(a.setup).read_text(encoding="utf-8") if a.setup else ""
+        res = userfix.fix(source, tests, setup, a.metric, a.timeout)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    print(userfix.render(res, a.metric, a.top))
     return 0
 
 
@@ -126,7 +163,8 @@ def cmd_show(a: argparse.Namespace) -> int:
         return 2
     ts = {t.id: t for t in tasks.load_tasks(source)}
     if a.task_id not in ts:
-        near = [i for i in ts if i.startswith(a.task_id.rsplit("/", 1)[0] + "/")][:8]
+        prefix = "/".join(a.task_id.split("/")[:2]) + "/"
+        near = [i for i in ts if i.startswith(prefix)][:8]
         print(
             f"no task {a.task_id!r}. Tasks for that problem: {', '.join(near) or 'none'}",
             file=sys.stderr,
@@ -203,15 +241,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     b = sub.add_parser("build-tasks", help="inject bugs and build data/tasks_*.jsonl.gz")
-    b.add_argument("--source", choices=(*SOURCES, "both"), default="both")
+    b.add_argument("--source", choices=(*SOURCES, "both"), default="both", help=SOURCE_HELP)
     b.add_argument("--limit", type=data.positive_int, default=None, help="first N problems only")
-    b.add_argument("--workers", type=data.positive_int, default=8)
+    b.add_argument("--workers", type=data.positive_int, default=8, help=WORKERS_HELP)
     b.set_defaults(func=cmd_build_tasks)
 
     r = sub.add_parser("repair", help="run the classical search on every task (resumable)")
-    r.add_argument("--source", choices=(*SOURCES, "both"), default="both")
+    r.add_argument("--source", choices=(*SOURCES, "both"), default="both", help=SOURCE_HELP)
     r.add_argument("--limit", type=data.positive_int, default=None, help="first N tasks only")
-    r.add_argument("--workers", type=data.positive_int, default=8)
+    r.add_argument("--workers", type=data.positive_int, default=8, help=WORKERS_HELP)
     r.set_defaults(func=cmd_repair)
 
     rep = sub.add_parser("report", help="aggregate results into results/classical_repair.json")
@@ -230,10 +268,40 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser(
         "check-isolation", help="re-run sampled candidates in fresh interpreters and compare"
     )
-    c.add_argument("--tasks", type=data.positive_int, default=200)
-    c.add_argument("--per-task", type=data.positive_int, default=4)
-    c.add_argument("--workers", type=data.positive_int, default=8)
+    c.add_argument("--tasks", type=data.positive_int, default=200, help="tasks sampled")
+    c.add_argument("--per-task", type=data.positive_int, default=4, help="candidates per task")
+    c.add_argument("--workers", type=data.positive_int, default=8, help=WORKERS_HELP)
     c.set_defaults(func=cmd_check_isolation)
+
+    f = sub.add_parser(
+        "fix",
+        help="repair your own program against your own asserts",
+        description=(
+            "Try every one-edit change to PROGRAM and list those that make every assert "
+            "pass, smallest first. Example: minimal-diff fix buggy.py --tests test_buggy.py"
+        ),
+    )
+    f.add_argument("program", help="the Python file to repair")
+    f.add_argument("--tests", help="a file whose top-level `assert` statements are the tests")
+    f.add_argument(
+        "--assert",
+        dest="asserts",
+        action="append",
+        metavar="STMT",
+        help='one assert statement, e.g. --assert "assert f(2) == 4" (repeatable)',
+    )
+    f.add_argument("--setup", help="a file run after the program and before the tests")
+    f.add_argument(
+        "--metric",
+        choices=sorted(repair.METRICS),
+        default=repair.DEFAULT_METRIC,
+        help=f"how patch size is measured (default: {repair.DEFAULT_METRIC})",
+    )
+    f.add_argument("--top", type=data.positive_int, default=5, help="patches to list (default 5)")
+    f.add_argument(
+        "--timeout", type=float, default=2.0, help="seconds per assert before a hang (default 2)"
+    )
+    f.set_defaults(func=cmd_fix)
 
     from .model import cli as model_cli
 

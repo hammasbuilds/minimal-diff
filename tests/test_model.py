@@ -81,14 +81,16 @@ def test_apply_diff_rejects_context_that_is_not_there():
 def test_cache_hits_never_call_the_model(tmp_path):
     fake = FakeClient(lambda s, p: f"echo:{p}")
     c = CachedClient(fake, tmp_path)
-    assert c.generate("sys", "q1") == "echo:q1"
-    assert c.generate("sys", "q1") == "echo:q1"
-    assert c.generate("sys", "q2") == "echo:q2"
+    assert c.generate("sys", "q1").text == "echo:q1"
+    assert c.generate("sys", "q1").text == "echo:q1"
+    assert c.generate("sys", "q2").text == "echo:q2"
     assert (fake.calls, c.hits, c.misses) == (2, 1, 2)
     assert c.cached("sys", "q1") and not c.cached("sys", "q3")
     # A second client over the same directory resumes from disk.
     fake2 = FakeClient(lambda s, p: "different")
-    assert CachedClient(fake2, tmp_path).generate("sys", "q1") == "echo:q1" and fake2.calls == 0
+    assert (
+        CachedClient(fake2, tmp_path).generate("sys", "q1").text == "echo:q1" and fake2.calls == 0
+    )
 
 
 def test_cache_key_depends_on_everything_that_changes_the_answer():
@@ -102,7 +104,7 @@ def test_cache_key_depends_on_everything_that_changes_the_answer():
 def test_ollama_client_reports_an_unreachable_server_clearly():
     from minimal_diff.model.client import ModelUnavailable
 
-    c = OllamaClient(url="http://127.0.0.1:9", timeout=2)  # port 9: nothing listens
+    c = OllamaClient(url="http://127.0.0.1:9", timeout=2, backoff=0.01)  # port 9: nothing listens
     with pytest.raises(ModelUnavailable, match="cannot reach ollama"):
         c.generate("s", "p")
 
@@ -187,3 +189,95 @@ def test_sample_takes_one_task_per_problem_and_balances_kinds():
     kinds = [t.kind for t in got]
     assert abs(kinds.count("compare") - kinds.count("const")) <= 1
     assert arm.sample_tasks(ts, per_source=20) == got  # seeded
+
+
+class _Ollama:
+    """A local HTTP server that plays back a script of (status, body) replies."""
+
+    def __init__(self, script):
+        import http.server
+        import threading
+
+        self.script = list(script)
+        self.hits = 0
+        outer = self
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.rfile.read(int(self.headers["Content-Length"]))
+                outer.hits += 1
+                status, body = outer.script.pop(0)
+                self.send_response(status)
+                self.end_headers()
+                self.wfile.write(body.encode())
+
+            def log_message(self, *a):
+                pass
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self):
+        self.server.shutdown()
+
+
+def test_client_retries_5xx_and_missing_message_then_keeps_done_reason():
+    ok = json.dumps({"message": {"content": "hi"}, "done_reason": "length"})
+    srv = _Ollama([(500, "boom"), (200, json.dumps({"error": "loading"})), (200, ok)])
+    try:
+        r = OllamaClient(url=srv.url, backoff=0.01).generate("s", "p")
+    finally:
+        srv.close()
+    assert (r.text, r.done_reason, r.truncated, srv.hits) == ("hi", "length", True, 3)
+
+
+def test_client_gives_up_after_retries_and_does_not_retry_4xx():
+    from minimal_diff.model.client import ModelUnavailable
+
+    srv = _Ollama([(503, "x")] * 3)
+    try:
+        with pytest.raises(ModelUnavailable, match="after 3 tries"):
+            OllamaClient(url=srv.url, backoff=0.01).generate("s", "p")
+    finally:
+        srv.close()
+    srv = _Ollama([(404, "model not found")])
+    try:
+        with pytest.raises(ModelUnavailable, match="HTTP 404"):
+            OllamaClient(url=srv.url, backoff=0.01).generate("s", "p")
+        assert srv.hits == 1
+    finally:
+        srv.close()
+
+
+def test_truncated_reply_is_its_own_verdict_and_cached_as_such(task_and_problem, tmp_path):
+    from minimal_diff.model.client import Reply
+
+    t, rec = task_and_problem
+    job = arm.Job(t, rec, prompts.build(t, rec, "plain"))
+    row = arm.score(job, Reply(f"```python\n{rec.reference}", "length"))
+    assert row["verdict"] == "truncated" and row["done_reason"] == "length"
+    c = CachedClient(FakeClient(lambda s, p: Reply("partial", "length")), tmp_path)
+    c.generate("s", "p")
+    again = CachedClient(FakeClient(lambda s, p: "never called"), tmp_path).generate("s", "p")
+    assert again.truncated
+
+
+def test_rows_are_written_as_they_are_scored_and_a_rerun_resumes(task_and_problem, tmp_path):
+    t, rec = task_and_problem
+    jobs = arm.plan([t], {rec.key: rec}, prompts.PROMPTS)
+    out = tmp_path / "rows.jsonl"
+    calls = []
+
+    def respond(system, prompt):
+        calls.append(prompt)
+        if len(calls) == 2:
+            raise RuntimeError("ollama died")
+        return _fix_reply(t, rec, "fix")
+
+    with pytest.raises(RuntimeError):
+        arm.run(jobs, FakeClient(respond), out, progress=False)
+    assert len(arm.read_rows(out)) == 1  # the first row survived the crash
+    out.write_text(out.read_text() + '{"half a li', encoding="utf-8")  # killed mid-write
+    n = arm.run(jobs, FakeClient(lambda s, p: _fix_reply(t, rec, "fix")), out, progress=False)
+    assert n == 2 and len(arm.read_rows(out)) == 3

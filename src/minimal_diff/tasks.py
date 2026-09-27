@@ -46,6 +46,19 @@ class ProblemRecord:
     n_near_inputs: int = 0
     dropped_tests: int = 0
     dropped_inputs: int = 0
+    # The reference's slowest visible or hidden assert, measured at build time.
+    slowest_assert_s: float = 0.0
+
+    @property
+    def item_budget(self) -> float:
+        """Seconds any one assert or hidden input may take before it counts as a hang.
+
+        At least `BASE_ITEM_BUDGET`, and never under `SLOWDOWN` times the reference's
+        slowest assert, so a timeout always means "far slower than the reference", never
+        "a correct program on a busy machine". Every judge in the repo - the search, the
+        oracle, the model arm - uses this one number.
+        """
+        return max(BASE_ITEM_BUDGET, SLOWDOWN * self.slowest_assert_s)
 
 
 @dataclass
@@ -70,27 +83,34 @@ class BuildStats:
     dropped_reference_fails: int = 0
     dropped_no_tests: int = 0
     dropped_no_mutants: int = 0
+    # Every mutant passed every visible assert, so no task has a failing test.
+    dropped_all_survived: int = 0
     mutants: int = 0
     mutants_survived: int = 0  # passed every visible assert: not a task (no failing test)
     tasks: int = 0
 
 
-# A hidden input is kept only if the reference answers it this fast, so a patch that runs
-# out the 1 s item budget on it is at least 20x slower than the reference - a hang, not a
-# slightly slower correct program on a busy machine. Without this, exponential references
-# (binomial coefficients by plain recursion, all permutations of a 7-letter string) sat
-# near the budget and the same patch was judged overfit on one run and not on the next.
-VET_MAX_REF_SECONDS = 0.05
+BASE_ITEM_BUDGET = 1.0
+SLOWDOWN = 20
+# A hidden input is kept only if a whole comparison of the reference against itself on it
+# - both calls and the equality check - takes at most BASE_ITEM_BUDGET / SLOWDOWN. A patch
+# that runs out the item budget on it is then at least 20x slower than the reference. The
+# first version timed the reference call alone; comparing a 793x793 matrix to itself
+# then took over a second on its own and three correct patches were judged "overfit".
+VET_MAX_ITEM_SECONDS = BASE_ITEM_BUDGET / SLOWDOWN
+REFERENCE_CHECK_TIMEOUT = 10.0  # generous: this only decides which asserts are usable
 
 
 def _vet_inputs(ref: str, fn: str, setup: str, cands: list[str]) -> list[str]:
     if not cands:
         return []
-    [row] = sandbox.run_compare(ref, fn, [ref], cands, setup, stop_on_first_difference=False)
+    [row] = sandbox.run_compare(
+        ref, fn, [ref], cands, setup, stop_on_first_difference=False, item_timeout=1.0
+    )
     return [
         x
         for x, r in zip(cands, row, strict=True)
-        if r.status == "same" and r.ref_status == "ok" and r.ref_seconds <= VET_MAX_REF_SECONDS
+        if r.status == "same" and r.ref_status == "ok" and r.seconds <= VET_MAX_ITEM_SECONDS
     ]
 
 
@@ -107,7 +127,13 @@ def build_problem(p: data.Problem) -> tuple[ProblemRecord | None, list[Task], di
     if operators.parse(ref) is None:
         counts["reason"] = "reference_fails"
         return None, [], counts
-    checks = sandbox.run_asserts([ref], list(p.tests) + list(p.hidden_tests), p.setup, False)[0]
+    checks = sandbox.run_asserts(
+        [ref],
+        list(p.tests) + list(p.hidden_tests),
+        p.setup,
+        False,
+        item_timeout=REFERENCE_CHECK_TIMEOUT,
+    )[0]
     vis_ok = [t for t, r in zip(p.tests, checks, strict=False) if r.status == "pass"]
     hid_ok = [
         t for t, r in zip(p.hidden_tests, checks[len(p.tests) :], strict=True) if r.status == "pass"
@@ -146,6 +172,7 @@ def build_problem(p: data.Problem) -> tuple[ProblemRecord | None, list[Task], di
         n_near_inputs=len(near),
         dropped_tests=len(p.tests) - len(vis_ok),
         dropped_inputs=len(cands) - len(hidden),
+        slowest_assert_s=max((r.seconds for r in checks if r.status == "pass"), default=0.0),
     )
 
     muts = [m for m in operators.inject(p.reference) if m.code != ref]
@@ -153,7 +180,13 @@ def build_problem(p: data.Problem) -> tuple[ProblemRecord | None, list[Task], di
     if not muts:
         counts["reason"] = "no_mutants"
         return rec, [], counts
-    rows = sandbox.run_asserts([m.code for m in muts], vis_ok, p.setup, stop_on_first_failure=False)
+    rows = sandbox.run_asserts(
+        [m.code for m in muts],
+        vis_ok,
+        p.setup,
+        stop_on_first_failure=False,
+        item_timeout=rec.item_budget,
+    )
     tasks: list[Task] = []
     for m, row in zip(muts, rows, strict=True):
         status = [r.status for r in row]
@@ -172,6 +205,8 @@ def build_problem(p: data.Problem) -> tuple[ProblemRecord | None, list[Task], di
                 visible_status=status,
             )
         )
+    if not tasks:
+        counts["reason"] = "all_survived"
     return rec, tasks, counts
 
 
@@ -192,6 +227,8 @@ def build(
                 stats.dropped_no_tests += 1
             elif c["reason"] == "no_mutants":
                 stats.dropped_no_mutants += 1
+            elif c["reason"] == "all_survived":
+                stats.dropped_all_survived += 1
             if rec is not None and ts:
                 recs.append(rec)
                 tasks.extend(ts)

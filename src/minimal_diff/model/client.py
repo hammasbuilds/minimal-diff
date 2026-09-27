@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -18,18 +19,35 @@ from typing import Protocol
 
 DEFAULT_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "qwen2.5-coder:14b"
-# Greedy and seeded: the arms differ by instruction, not by sampling luck.
-DEFAULT_OPTIONS = {"temperature": 0.0, "seed": 0, "num_ctx": 4096, "num_predict": 1024}
+# Greedy and seeded: the arms differ by instruction, not by sampling luck. 4096 new
+# tokens is several times the longest reference program; a reply that still hits the
+# limit is recorded as truncated rather than scored as a broken repair.
+DEFAULT_OPTIONS = {"temperature": 0.0, "seed": 0, "num_ctx": 8192, "num_predict": 4096}
+RETRIES = 3
+
+
+@dataclass(frozen=True)
+class Reply:
+    text: str
+    done_reason: str = "stop"  # Ollama's: "stop", or "length" when num_predict ran out
+
+    @property
+    def truncated(self) -> bool:
+        return self.done_reason == "length"
 
 
 class Client(Protocol):
     model: str
 
-    def generate(self, system: str, prompt: str) -> str: ...
+    def generate(self, system: str, prompt: str) -> Reply: ...
 
 
 class ModelUnavailable(RuntimeError):
     pass
+
+
+class _Transient(Exception):
+    """A failure worth retrying: dropped connection, 5xx, a 200 without a message."""
 
 
 @dataclass
@@ -38,8 +56,20 @@ class OllamaClient:
     url: str = DEFAULT_URL
     options: dict = field(default_factory=lambda: dict(DEFAULT_OPTIONS))
     timeout: float = 600.0
+    backoff: float = 5.0  # seconds before the first retry; doubles each time
 
-    def generate(self, system: str, prompt: str) -> str:
+    def generate(self, system: str, prompt: str) -> Reply:
+        last: Exception | None = None
+        for attempt in range(RETRIES):
+            try:
+                return self._once(system, prompt)
+            except _Transient as e:
+                last = e
+                if attempt + 1 < RETRIES:
+                    time.sleep(self.backoff * 2**attempt)
+        raise ModelUnavailable(f"{self.model} at {self.url}: {last} (after {RETRIES} tries)")
+
+    def _once(self, system: str, prompt: str) -> Reply:
         body = json.dumps(
             {
                 "model": self.model,
@@ -56,26 +86,34 @@ class OllamaClient:
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))["message"]["content"]
+                body = resp.read().decode("utf-8")
         except urllib.error.HTTPError as e:
-            raise ModelUnavailable(
-                f"ollama returned HTTP {e.code} for {self.model}: {e.read()[:200]!r}"
-            ) from e
+            detail = f"HTTP {e.code}: {e.read()[:200]!r}"
+            if e.code >= 500:
+                raise _Transient(detail) from e
+            raise ModelUnavailable(f"ollama refused {self.model}: {detail}") from e
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-            raise ModelUnavailable(f"cannot reach ollama at {self.url}: {e}") from e
+            raise _Transient(f"cannot reach ollama: {e}") from e
+        try:
+            d = json.loads(body)
+            text = d["message"]["content"]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            raise _Transient(f"reply without a message: {body[:200]!r}") from e
+        return Reply(text, d.get("done_reason") or "stop")
 
 
 @dataclass
 class FakeClient:
-    """A deterministic stand-in: `respond(system, prompt) -> text`. Counts its calls."""
+    """A deterministic stand-in: `respond(system, prompt) -> text or Reply`. Counts calls."""
 
-    respond: Callable[[str, str], str]
+    respond: Callable[[str, str], str | Reply]
     model: str = "fake"
     calls: int = 0
 
-    def generate(self, system: str, prompt: str) -> str:
+    def generate(self, system: str, prompt: str) -> Reply:
         self.calls += 1
-        return self.respond(system, prompt)
+        r = self.respond(system, prompt)
+        return r if isinstance(r, Reply) else Reply(r)
 
 
 def cache_key(model: str, system: str, prompt: str, options: dict) -> str:
@@ -111,13 +149,14 @@ class CachedClient:
     def cached(self, system: str, prompt: str) -> bool:
         return self._path(system, prompt).exists()
 
-    def generate(self, system: str, prompt: str) -> str:
+    def generate(self, system: str, prompt: str) -> Reply:
         p = self._path(system, prompt)
         if p.exists():
             self.hits += 1
-            return json.loads(p.read_text(encoding="utf-8"))["response"]
+            d = json.loads(p.read_text(encoding="utf-8"))
+            return Reply(d["response"], d.get("done_reason", "stop"))
         self.misses += 1
-        text = self.inner.generate(system, prompt)
+        reply = self.inner.generate(system, prompt)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
         tmp.write_text(
@@ -127,10 +166,11 @@ class CachedClient:
                     "options": self.options,
                     "system": system,
                     "prompt": prompt,
-                    "response": text,
+                    "response": reply.text,
+                    "done_reason": reply.done_reason,
                 }
             ),
             encoding="utf-8",
         )
         tmp.replace(p)  # atomic: a killed run never leaves half a cache entry
-        return text
+        return reply

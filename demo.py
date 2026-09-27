@@ -46,8 +46,12 @@ DEMO = [
 def main() -> int:
     for task_id, regime, why in DEMO:
         source = task_id.split("/", 1)[0]
-        task = next(t for t in tasks.load_tasks(source) if t.id == task_id)
-        prob = tasks.load_problems(source)[task.problem]
+        try:
+            task = next(t for t in tasks.load_tasks(source) if t.id == task_id)
+            prob = tasks.load_problems(source)[task.problem]
+        except FileNotFoundError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
         row = repair.repair_task(task, prob)
         print("=" * 88)
         print(f"{why}\n")

@@ -19,7 +19,7 @@ from pathlib import Path
 from .. import diffmetrics, operators, oracle, sandbox, stats
 from ..tasks import ProblemRecord, Task
 from . import parse, prompts
-from .client import Client
+from .client import Client, Reply
 
 
 def sample_tasks(tasks: list[Task], per_source: int, seed: int = 0) -> list[Task]:
@@ -66,8 +66,10 @@ def plan(
     ]
 
 
-def score(job: Job, reply: str) -> dict:
+def score(job: Job, reply: Reply | str) -> dict:
     """One scored row for one model reply."""
+    if isinstance(reply, str):
+        reply = Reply(reply)
     task, prob = job.task, job.problem
     row: dict = {
         "id": task.id,
@@ -75,9 +77,14 @@ def score(job: Job, reply: str) -> dict:
         "source": prob.source,
         "bug_kind": task.kind,
         "prompt": job.prompt.name,
-        "reply_chars": len(reply),
+        "reply_chars": len(reply.text),
+        "done_reason": reply.done_reason,
     }
-    parsed = parse.to_program(job.prompt.name, task.buggy, reply)
+    if reply.truncated:
+        # Cut off by the token limit: not the model's repair, so not scored as one.
+        row.update(parsed=False, parse_error="truncated", plausible=False, verdict="truncated")
+        return row
+    parsed = parse.to_program(job.prompt.name, task.buggy, reply.text)
     if parsed.code is None or operators.parse(parsed.code) is None:
         row.update(
             parsed=False,
@@ -87,7 +94,10 @@ def score(job: Job, reply: str) -> dict:
         )
         return row
     code = parsed.code
-    [vis] = sandbox.run_asserts([code], prob.tests, prob.setup, stop_on_first_failure=False)
+    # The same per-problem budget the search is judged with.
+    [vis] = sandbox.run_asserts(
+        [code], prob.tests, prob.setup, stop_on_first_failure=False, item_timeout=prob.item_budget
+    )
     plausible = all(r.status == "pass" for r in vis)
     row.update(
         parsed=True,
@@ -105,24 +115,47 @@ def score(job: Job, reply: str) -> dict:
     row["size"] = size
     if plausible:
         [v] = oracle.judge(prob, [code], [vis])
-        row.update(verdict=v.label, witness=v.witness)
+        row.update(verdict=v.label, witness=v.witness, found_by=v.found_by)
     else:
         row["verdict"] = "implausible"
     return row
 
 
-def run(jobs: list[Job], client: Client, out: Path, progress: bool = True) -> int:
-    """Generate (through the cache) and score every job; rewrite `out`. Returns rows written."""
+def read_rows(path: Path) -> list[dict]:
+    """Scored rows so far; a line cut off by a killed run is ignored."""
+    if not path.exists():
+        return []
     rows = []
-    for i, job in enumerate(jobs, 1):
-        reply = client.generate(job.prompt.system, job.prompt.user)
-        rows.append(score(job, reply))
-        if progress and i % 25 == 0:
-            print(f"  {i}/{len(jobs)} replies scored", flush=True)
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
+def run(jobs: list[Job], client: Client, out: Path, progress: bool = True) -> int:
+    """Generate (through the cache) and score every job not yet in `out`, appending each
+    row as soon as it is scored. Returns rows written by this call."""
+    existing = read_rows(out)
+    if out.exists():
+        # Drop a half-written last line from a killed run, or the next row would be
+        # appended onto it and lost too.
+        out.write_text(
+            "".join(json.dumps(r, sort_keys=True) + "\n" for r in existing),
+            encoding="utf-8",
+            newline="\n",
+        )
+    done = {(r["id"], r["prompt"]) for r in existing}
+    todo = [j for j in jobs if (j.task.id, j.prompt.name) not in done]
     out.parent.mkdir(parents=True, exist_ok=True)
-    text = "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows)
-    out.write_text(text, encoding="utf-8", newline="\n")
-    return len(rows)
+    for i, job in enumerate(todo, 1):
+        row = score(job, client.generate(job.prompt.system, job.prompt.user))
+        with open(out, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+        if progress and i % 25 == 0:
+            print(f"  {i}/{len(todo)} replies scored", flush=True)
+    return len(todo)
 
 
 def summarise(rows: list[dict], classical: dict[str, dict] | None = None) -> dict:
@@ -141,6 +174,7 @@ def summarise(rows: list[dict], classical: dict[str, dict] | None = None) -> dic
         s = {
             "n": len(rs),
             "parsed": stats.cluster_rate(rs, lambda r: float(r["parsed"])),
+            "truncated": stats.cluster_rate(rs, lambda r: float(r["verdict"] == "truncated")),
             "plausible": stats.cluster_rate(rs, lambda r: float(r["plausible"])),
             "exact": stats.cluster_rate(rs, lambda r: float(r["verdict"] == "exact")),
             "no_witness": stats.cluster_rate(rs, lambda r: float(r["verdict"] == "no_witness")),

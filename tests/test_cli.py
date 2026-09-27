@@ -85,3 +85,50 @@ def test_counts_must_be_positive(capsys):
             cli.main(argv)
         assert e.value.code == 2
     assert "must be at least 1" in capsys.readouterr().err
+
+
+def test_show_suggests_tasks_of_the_right_problem(fixture_env, capsys):
+    cli.main(["build-tasks", "--source", "mbpp", "--workers", "2"])
+    capsys.readouterr()
+    assert cli.main(["show", "mbpp/7"]) == 2
+    err = capsys.readouterr().err
+    assert "mbpp/7/" in err
+
+
+def test_fix_repairs_a_users_own_file(tmp_path, capsys):
+    prog = tmp_path / "prog.py"
+    prog.write_text("def area(w, h):\n    return w + h\n")
+    tests = tmp_path / "test_prog.py"
+    tests.write_text("assert area(2, 3) == 6\nassert area(4, 5) == 20\n")
+    assert cli.main(["fix", str(prog), "--tests", str(tests)]) == 0
+    out = capsys.readouterr().out
+    assert "+ return w * h" in out and "not the same as being correct" in out
+    assert "+++ b/program.py" in out
+
+
+def test_fix_inline_asserts_and_no_fix_found(tmp_path, capsys):
+    prog = tmp_path / "prog.py"
+    prog.write_text("def f(x):\n    return x\n")
+    assert cli.main(["fix", str(prog), "--assert", "assert f(1) == 1"]) == 0
+    assert "already pass" in capsys.readouterr().out
+    assert cli.main(["fix", str(prog), "--assert", "assert f(1) == 'x'"]) == 0
+    assert "none of the" in capsys.readouterr().out
+    assert cli.main(["fix", str(prog)]) == 2
+    assert "--tests FILE" in capsys.readouterr().err
+    bad = tmp_path / "bad.py"
+    bad.write_text("def (:")
+    assert cli.main(["fix", str(bad), "--assert", "assert 1"]) == 2
+    assert "does not parse" in capsys.readouterr().err
+
+
+def test_demo_without_data_prints_a_message_not_a_traceback(capsys):
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "demo", pathlib.Path(__file__).resolve().parents[1] / "demo.py"
+    )
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    assert demo.main() == 2
+    assert "build-tasks" in capsys.readouterr().err

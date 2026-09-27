@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import repair, stats
+from .repair import DEFAULT_METRIC, METRICS
 from .tasks import ProblemRecord, Task
 
 REGIMES = ("k1", "k3", "all")
@@ -102,42 +103,84 @@ def _paired(g: str, a, b):
     return f
 
 
+def _metric(g: str, m: str, key: str):
+    """A per-task number from the `by_metric` summary of metric `m` under regime `g`."""
+
+    def f(r: dict) -> float | None:
+        bm = r["subsets"][g].get("by_metric")
+        if bm is None or key not in bm[m]:
+            return None
+        v = bm[m][key]
+        return float(v) if not isinstance(v, str) else None
+
+    return f
+
+
+def _metric_verdict(g: str, m: str, label: str):
+    def f(r: dict) -> float | None:
+        bm = r["subsets"][g].get("by_metric")
+        return None if bm is None else float(bm[m]["site_verdict"] == label)
+
+    return f
+
+
+def _metrics_table(rs: list[dict], g: str) -> dict:
+    """Every size metric side by side: site-order and random tie-breaks, paired against
+    a random plausible patch (positive = the size preference is worse than no preference)."""
+    cr = stats.cluster_rate
+    rand_over, rand_exact = _sub(g, "random_overfit"), _sub(g, "random_exact")
+    out = {}
+    for m in METRICS:
+        site_over, site_exact = _metric_verdict(g, m, "overfit"), _metric_verdict(g, m, "exact")
+        tie_over, tie_exact = _metric(g, m, "tied_overfit"), _metric(g, m, "tied_exact")
+        out[m] = {
+            "site_exact": cr(rs, site_exact),
+            "site_overfit": cr(rs, site_over),
+            "tie_exact": cr(rs, tie_exact),
+            "tie_overfit": cr(rs, tie_over),
+            "diff_overfit_site_minus_random": cr(rs, _paired(g, site_over, rand_over)),
+            "diff_exact_site_minus_random": cr(rs, _paired(g, site_exact, rand_exact)),
+            "diff_overfit_tie_minus_random": cr(rs, _paired(g, tie_over, rand_over)),
+            "diff_exact_tie_minus_random": cr(rs, _paired(g, tie_exact, rand_exact)),
+            "tie_at_smallest": cr(
+                rs,
+                lambda r, m=m: (
+                    None
+                    if "by_metric" not in r["subsets"][g]
+                    else float(r["subsets"][g]["by_metric"][m]["n_tied"] > 1)
+                ),
+            ),
+            "truth_strictly_smallest": cr(rs, _metric(g, m, "truth_strictly_smallest")),
+            "wrong_patch_as_small_as_truth": cr(rs, _metric(g, m, "overfit_as_small_as_truth")),
+        }
+    return out
+
+
 def _regime(rs: list[dict], g: str, kinds: Iterable[str]) -> dict:
     cr = stats.cluster_rate
     small_over = _is("overfit", g)
+    multi = [r for r in rs if r["subsets"][g]["n_plausible"] >= 2]
     reg = {
+        "default_metric": DEFAULT_METRIC,
         "mean_visible_tests": round(sum(len(r["subset_indices"][g]) for r in rs) / len(rs), 2),
         "found_plausible": cr(rs, lambda r: float(r["subsets"][g]["n_plausible"] > 0)),
         "mean_plausible": round(sum(r["subsets"][g]["n_plausible"] for r in rs) / len(rs), 2),
+        # Only here can any ranking matter: with one plausible patch every policy agrees.
+        "tasks_with_2plus_plausible": len(multi),
         "truth_plausible": cr(rs, lambda r: float(r["subsets"][g].get("truth_plausible", False))),
         "smallest_exact": cr(rs, _is("exact", g)),
         "smallest_no_witness": cr(rs, _is("no_witness", g)),
         "smallest_overfit": cr(rs, small_over),
-        "tied_exact": cr(rs, _sub(g, "tied_exact")),
-        "tied_overfit": cr(rs, _sub(g, "tied_overfit")),
         "random_exact": cr(rs, _sub(g, "random_exact")),
         "random_overfit": cr(rs, _sub(g, "random_overfit")),
         "at_fault_exact": cr(rs, _is("exact", g, "at_fault")),
         "at_fault_overfit": cr(rs, _is("overfit", g, "at_fault")),
         # Paired over the same tasks, so the interval is on the difference itself.
-        "diff_overfit_tied_minus_random": cr(
-            rs, _paired(g, _sub(g, "tied_overfit"), _sub(g, "random_overfit"))
-        ),
-        "diff_overfit_smallest_minus_random": cr(
-            rs, _paired(g, small_over, _sub(g, "random_overfit"))
-        ),
         "diff_overfit_smallest_minus_at_fault": cr(
             rs, _paired(g, small_over, _is("overfit", g, "at_fault"))
         ),
-        "tie_at_smallest": cr(
-            rs,
-            lambda r: (
-                None
-                if r["subsets"][g]["n_plausible"] == 0
-                else float(r["subsets"][g]["n_tied_smallest"] > 1)
-            ),
-        ),
-        "wrong_patch_as_small_as_truth": cr(rs, _sub(g, "overfit_as_small_as_truth")),
+        "by_metric": _metrics_table(rs, g),
+        "by_metric_2plus_plausible": _metrics_table(multi, g) if multi else {},
         "overfit_pick_off_fault": cr(
             rs,
             lambda r: (
@@ -171,7 +214,20 @@ def _regime(rs: list[dict], g: str, kinds: Iterable[str]) -> dict:
             "smallest_exact": cr(ks, _is("exact", g)),
             "smallest_no_witness": cr(ks, _is("no_witness", g)),
             "smallest_overfit": cr(ks, _is("overfit", g)),
+            "random_exact": cr(ks, _sub(g, "random_exact")),
+            "random_overfit": cr(ks, _sub(g, "random_overfit")),
+            "by_metric": {
+                m: {
+                    "site_exact": cr(ks, _metric_verdict(g, m, "exact")),
+                    "site_overfit": cr(ks, _metric_verdict(g, m, "overfit")),
+                    "tie_exact": cr(ks, _metric(g, m, "tied_exact")),
+                    "tie_overfit": cr(ks, _metric(g, m, "tied_overfit")),
+                }
+                for m in METRICS
+            },
         }
+    rest = [r for r in rs if r["bug_kind"] != "negate_if"]
+    reg["excluding_negate_if"] = _metrics_table(rest, g) if rest else {}
     return reg
 
 

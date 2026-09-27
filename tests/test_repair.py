@@ -95,10 +95,10 @@ def test_visible_subsets_always_include_a_failing_test(built):
         assert subs["k3"][0] == t.failing[0]
 
 
-def _cand(i, verdict, tokens, at_fault=True):
+def _cand(i, verdict, tokens, at_fault=True, nodes=None):
     size = {
         "tokens": tokens,
-        "ast_nodes": tokens,
+        "ast_nodes": tokens if nodes is None else nodes,
         "lines": 1,
         "unrelated_lines": 0 if at_fault else 1,
         "touches_fault": at_fault,
@@ -113,13 +113,31 @@ def test_selection_policies():
     assert repair.select(cands, [0], "smallest").index == 0  # a tie goes to the earlier site
     assert repair.select(cands, [0], "at_fault").index == 1
     s = repair.summarise_subset(cands, [0])
-    assert s["n_plausible"] == 3 and s["n_tied_smallest"] == 2
+    t = s["by_metric"]["tokens"]
+    assert s["n_plausible"] == 3 and t["n_tied"] == 2
     assert s["random_exact"] == pytest.approx(1 / 3)
-    assert s["overfit_as_small_as_truth"] is True
+    assert t["overfit_as_small_as_truth"] is True and t["truth_strictly_smallest"] is False
     # with a random tie-break the smallest policy is right half the time here
-    assert s["tied_exact"] == pytest.approx(0.5) and s["tied_overfit"] == pytest.approx(0.5)
+    assert t["tied_exact"] == pytest.approx(0.5) and t["tied_overfit"] == pytest.approx(0.5)
+    assert t["site_verdict"] == "overfit"
     with pytest.raises(ValueError):
         repair.select(cands, [0], "largest")
+
+
+def test_the_size_metric_decides_between_an_unnegation_and_an_operator_swap():
+    """The reviewer's case: removing `not` is 1 token but 2 AST nodes; a comparison swap is
+    1 of each. `tokens+ast` always prefers the swap, `tokens` leaves it to site order."""
+    swap = _cand(0, "overfit", 1, nodes=1)
+    unnegate = _cand(1, "exact", 1, nodes=2)
+    cands = [swap, unnegate]
+    assert repair.select(cands, [0], "smallest", "tokens+ast").verdict == "overfit"
+    assert repair.select(cands, [0], "smallest", "ast").verdict == "overfit"
+    by = repair.summarise_subset(cands, [0])["by_metric"]
+    assert by["tokens"]["n_tied"] == 2 and by["tokens"]["tied_exact"] == pytest.approx(0.5)
+    assert by["tokens+ast"]["n_tied"] == 1 and by["tokens+ast"]["tied_exact"] == 0.0
+    # with the swap later in the file, tokens + site order picks the fix
+    late_swap = _cand(2, "overfit", 1, nodes=1)
+    assert repair.select([unnegate, late_swap], [0], "smallest", "tokens").verdict == "exact"
 
 
 def test_task_roundtrip_through_storage(built, tmp_path, monkeypatch):
@@ -147,3 +165,59 @@ def test_a_patch_that_hangs_on_a_hidden_input_is_a_hang_witness(built):
     patch = rec.reference.replace("total = 0", "total = 0\n    while len(xs) > 3:\n        pass")
     [v] = oracle.judge(rec, [patch], item_timeout=0.5)
     assert v.label == "overfit" and v.found_by == "hang" and "patch timeout" in v.witness
+
+
+def _record(reference, tests, entry, inputs=(), slowest=0.0):
+    return tasks.ProblemRecord(
+        key="mbpp/1",
+        source="mbpp",
+        pid=1,
+        text="",
+        entry_point=entry,
+        reference=reference,
+        tests=list(tests),
+        hidden_inputs=list(inputs),
+        n_near_inputs=len(inputs),
+        slowest_assert_s=slowest,
+    )
+
+
+def test_vetting_times_the_whole_comparison_not_just_the_reference_call():
+    """generate_matrix(793) in MBPP 834: fast to build, slow to compare with itself."""
+    ref = "def grid(n):\n    return [[i * j for j in range(n)] for i in range(n)]\n"
+    assert tasks._vet_inputs(ref, "grid", "", ["3", "700"]) == ["3"]
+
+
+def test_a_slow_but_correct_patch_is_not_called_a_hang():
+    ref = "def f(n):\n    return n\n"
+    slow = "import time\ndef f(n):\n    if n == 5:\n        time.sleep(0.4)\n    return n\n"
+    rec = _record(ref, ["assert f(1) == 1"], "f", ["1", "5"])
+    # 0.4 s is over a 0.1 s budget but inside the 10x re-check
+    [v] = oracle.judge(rec, [slow], item_timeout=0.1)
+    assert v.label == "no_witness"
+
+
+def test_a_crash_is_a_crash_not_a_hang():
+    ref = "def f(n):\n    return n\n"
+    crash = "import os\ndef f(n):\n    if n == 5:\n        os._exit(3)\n    return n\n"
+    rec = _record(ref, ["assert f(1) == 1"], "f", ["1", "5"])
+    [v] = oracle.judge(rec, [crash], item_timeout=0.5)
+    assert v.label == "overfit" and v.found_by == "crash" and "patch crash" in v.witness
+
+
+def test_item_budget_scales_with_the_reference():
+    assert _record("", [], "f").item_budget == tasks.BASE_ITEM_BUDGET
+    assert _record("", [], "f", slowest=0.5).item_budget == 0.5 * tasks.SLOWDOWN
+
+
+def test_problem_whose_every_mutant_survives_is_counted():
+    from minimal_diff import data
+
+    # `x > 0` -> `x >= 0` and `0` -> `1` both leave f(3) == 3: every mutant survives.
+    p = data.Problem(
+        "mbpp", 5, "", "def f(x):\n    return x if x > 0 else x\n", "f", ("assert f(3) == 3",)
+    )
+    rec, ts, counts = tasks.build_problem(p)
+    assert ts == [] and counts["reason"] == "all_survived"
+    _, _, st = tasks.build([p], workers=1)
+    assert st.dropped_all_survived == 1 and st.problems_kept == 0
