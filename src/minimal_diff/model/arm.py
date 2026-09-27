@@ -157,6 +157,8 @@ def summarise(rows: list[dict], classical: dict[str, dict] | None = None) -> dic
             "unrelated_edit_rate": stats.cluster_rate(
                 sized, lambda r: float(r["size"]["unrelated_lines"] > 0)
             ),
+            # A reply that hands the buggy program back unchanged is its own failure mode.
+            "returned_unchanged": stats.cluster_rate(sized, lambda r: float(r["unchanged"])),
             "by_bug_kind": {},
         }
         for kind in sorted({r["bug_kind"] for r in rs}):

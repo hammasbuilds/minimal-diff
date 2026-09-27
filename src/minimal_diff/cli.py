@@ -204,14 +204,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     b = sub.add_parser("build-tasks", help="inject bugs and build data/tasks_*.jsonl.gz")
     b.add_argument("--source", choices=(*SOURCES, "both"), default="both")
-    b.add_argument("--limit", type=int, default=None, help="first N problems only")
-    b.add_argument("--workers", type=int, default=8)
+    b.add_argument("--limit", type=data.positive_int, default=None, help="first N problems only")
+    b.add_argument("--workers", type=data.positive_int, default=8)
     b.set_defaults(func=cmd_build_tasks)
 
     r = sub.add_parser("repair", help="run the classical search on every task (resumable)")
     r.add_argument("--source", choices=(*SOURCES, "both"), default="both")
-    r.add_argument("--limit", type=int, default=None, help="first N tasks only")
-    r.add_argument("--workers", type=int, default=8)
+    r.add_argument("--limit", type=data.positive_int, default=None, help="first N tasks only")
+    r.add_argument("--workers", type=data.positive_int, default=8)
     r.set_defaults(func=cmd_repair)
 
     rep = sub.add_parser("report", help="aggregate results into results/classical_repair.json")
@@ -230,9 +230,9 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser(
         "check-isolation", help="re-run sampled candidates in fresh interpreters and compare"
     )
-    c.add_argument("--tasks", type=int, default=200)
-    c.add_argument("--per-task", type=int, default=4)
-    c.add_argument("--workers", type=int, default=8)
+    c.add_argument("--tasks", type=data.positive_int, default=200)
+    c.add_argument("--per-task", type=data.positive_int, default=4)
+    c.add_argument("--workers", type=data.positive_int, default=8)
     c.set_defaults(func=cmd_check_isolation)
 
     from .model import cli as model_cli

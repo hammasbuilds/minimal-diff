@@ -73,3 +73,15 @@ def test_show_rejects_bad_ids(fixture_env, capsys):
     assert "look like" in capsys.readouterr().err
     assert cli.main(["show", "mbpp/7/compare@999"]) == 2
     assert "Tasks for that problem" in capsys.readouterr().err
+
+
+def test_counts_must_be_positive(capsys):
+    for argv in (
+        ["repair", "--limit", "0"],
+        ["build-tasks", "--workers", "-2"],
+        ["model", "plan", "--per-source", "x"],
+    ):
+        with pytest.raises(SystemExit) as e:
+            cli.main(argv)
+        assert e.value.code == 2
+    assert "must be at least 1" in capsys.readouterr().err

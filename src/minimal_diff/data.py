@@ -32,6 +32,19 @@ def data_dir() -> Path:
     return Path(env) if env else ROOT / "data"
 
 
+def positive_int(text: str) -> int:
+    """argparse type: `--limit 0` would silently mean "no limit", so refuse it."""
+    import argparse
+
+    try:
+        n = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected a whole number, got {text!r}") from None
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {n}")
+    return n
+
+
 def write_json(path: Path, obj: object) -> None:
     """Pretty JSON with LF line endings, so a rerun on Windows is byte-identical in git."""
     path.parent.mkdir(parents=True, exist_ok=True)

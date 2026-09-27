@@ -14,7 +14,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="python">
   <img src="https://img.shields.io/badge/runtime%20deps-0-brightgreen" alt="zero dependencies">
-  <img src="https://img.shields.io/badge/tests-93-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-94-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/repair%20tasks-6%2C715-blue" alt="tasks">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"></a>
 </p>
@@ -303,7 +303,7 @@ git clone https://github.com/hammasbuilds/minimal-diff
 cd minimal-diff
 uv sync
 
-uv run pytest -q                       # 93 tests, no dataset, no model, ~40 s
+uv run pytest -q                       # 94 tests, no dataset, no model, ~40 s
 uv run python demo.py                  # the five repairs above, live
 uv run minimal-diff show mbpp/3/binop@17 --regime k1   # any task, any regime
 uv run minimal-diff report             # re-aggregate results/classical_*.jsonl.gz
@@ -352,7 +352,7 @@ Windows 11; the sandbox caps child memory with a Job Object there and `RLIMIT_AS
 ## Tests
 
 ```bash
-uv run pytest -q     # 93
+uv run pytest -q     # 94
 uv run ruff check src tests
 ```
 

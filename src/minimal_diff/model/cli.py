@@ -116,7 +116,12 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     def common(p: argparse.ArgumentParser) -> None:
         p.add_argument("--model", default=DEFAULT_MODEL)
         p.add_argument("--url", default=DEFAULT_URL)
-        p.add_argument("--per-source", type=int, default=200, help="problems sampled per benchmark")
+        p.add_argument(
+            "--per-source",
+            type=data.positive_int,
+            default=200,
+            help="problems sampled per benchmark",
+        )
         p.add_argument(
             "--prompts", nargs="+", choices=prompts.PROMPTS, default=list(prompts.PROMPTS)
         )
