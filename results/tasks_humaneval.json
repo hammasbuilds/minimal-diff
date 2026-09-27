@@ -8,6 +8,7 @@
     "dropped_reference_fails": 0,
     "dropped_no_tests": 3,
     "dropped_no_mutants": 9,
+    "dropped_all_survived": 1,
     "mutants": 1330,
     "mutants_survived": 163,
     "tasks": 1167

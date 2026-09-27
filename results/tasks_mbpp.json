@@ -4,12 +4,13 @@
   "limit": null,
   "stats": {
     "problems_seen": 974,
-    "problems_kept": 774,
-    "dropped_reference_fails": 2,
+    "problems_kept": 775,
+    "dropped_reference_fails": 1,
     "dropped_no_tests": 0,
     "dropped_no_mutants": 191,
-    "mutants": 6794,
-    "mutants_survived": 1246,
-    "tasks": 5548
+    "dropped_all_survived": 7,
+    "mutants": 6815,
+    "mutants_survived": 1251,
+    "tasks": 5564
   }
 }

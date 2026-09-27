@@ -221,3 +221,11 @@ def test_problem_whose_every_mutant_survives_is_counted():
     assert ts == [] and counts["reason"] == "all_survived"
     _, _, st = tasks.build([p], workers=1)
     assert st.dropped_all_survived == 1 and st.problems_kept == 0
+
+
+def test_oracle_self_check_finds_no_false_witness_on_a_clean_problem(built):
+    from minimal_diff import isolation
+
+    rec, _, _ = built
+    res = isolation.oracle_false_positives({rec.key: rec}, workers=1)
+    assert res == {"problems": 1, "false_overfit": 0, "cases": []}

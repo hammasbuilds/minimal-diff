@@ -55,7 +55,7 @@ def test_full_pipeline_on_fixture_data(fixture_env, capsys):
     task_id = "mbpp/7/binop@5"
     assert cli.main(["show", task_id]) == 0
     shown = capsys.readouterr().out
-    assert "the known fix" in shown and "smallest-first repair returns" in shown
+    assert "the known fix" in shown and "smallest by tokens" in shown
 
     assert cli.main(["model", "plan", "--per-source", "5"]) == 0
     plan = capsys.readouterr().out

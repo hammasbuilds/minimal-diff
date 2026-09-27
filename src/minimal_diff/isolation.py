@@ -59,3 +59,24 @@ def check(
         "disagree_involving_timeout": len(timing),
         "disagreements": disagree[:50],
     }
+
+
+def oracle_false_positives(problems: dict[str, ProblemRecord], workers: int = 8) -> dict:
+    """Judge a program that is the reference plus one inert statement, for every problem.
+
+    It is a different text, so it skips the "exact" shortcut and goes through every check
+    the oracle has; any "overfit" verdict is by construction a false witness.
+    """
+    from . import oracle
+
+    def one(p: ProblemRecord) -> tuple[str, oracle.Verdict]:
+        return p.key, oracle.judge(p, [p.reference + "\n_md_inert_ = 0\n"])[0]
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        res = list(pool.map(one, problems.values()))
+    bad = [
+        {"problem": k, "found_by": v.found_by, "witness": v.witness}
+        for k, v in res
+        if v.label == "overfit"
+    ]
+    return {"problems": len(res), "false_overfit": len(bad), "cases": bad}

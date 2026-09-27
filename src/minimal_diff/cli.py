@@ -56,6 +56,21 @@ def cmd_repair(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check_oracle(a: argparse.Namespace) -> int:
+    probs: dict[str, tasks.ProblemRecord] = {}
+    for source in SOURCES:
+        probs.update(tasks.load_problems(source))
+    res = isolation.oracle_false_positives(probs, workers=a.workers)
+    out = data.results_dir() / "oracle_check.json"
+    data.write_json(out, res)
+    print(
+        f"reference + one inert statement, judged on all {res['problems']} problems: "
+        f"{res['false_overfit']} false 'overfit' verdicts"
+    )
+    print(f"wrote {out}")
+    return 0 if res["false_overfit"] == 0 else 1
+
+
 def cmd_check_isolation(a: argparse.Namespace) -> int:
     ts: list[tasks.Task] = []
     probs: dict[str, tasks.ProblemRecord] = {}
@@ -207,12 +222,18 @@ def render_row(task: tasks.Task, prob: tasks.ProblemRecord, row: dict, regime: s
                 lines += [f"      - {old.strip()}", f"      + {new.strip()}"]
         if c["witness"]:
             lines.append(f"      witness: {_explain(c['witness'], prob)}")
-    pick = s["smallest"]
     lines.append("")
-    if pick is None:
+    plausible = [
+        repair.Candidate(**c) for c in row["plausible_k1"] if all(c["passes"][i] for i in subset)
+    ]
+    if not plausible:
         lines.append("smallest-first repair: no plausible patch")
-    else:
-        lines.append(f"smallest-first repair returns {pick['where']}: {pick['verdict'].upper()}")
+    for metric in (repair.DEFAULT_METRIC, "tokens+ast") if plausible else ():
+        pick = min(plausible, key=lambda c, m=metric: c.order_key(m))
+        lines.append(
+            f"smallest by {metric:<10} (ties by site order) returns {pick.where}: "
+            f"{pick.verdict.upper()}"
+        )
     return "\n".join(lines)
 
 
@@ -302,6 +323,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout", type=float, default=2.0, help="seconds per assert before a hang (default 2)"
     )
     f.set_defaults(func=cmd_fix)
+
+    o = sub.add_parser(
+        "check-oracle", help="judge each reference plus an inert line; any overfit is a bug"
+    )
+    o.add_argument("--workers", type=data.positive_int, default=8, help=WORKERS_HELP)
+    o.set_defaults(func=cmd_check_oracle)
 
     from .model import cli as model_cli
 
