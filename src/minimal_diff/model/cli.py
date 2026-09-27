@@ -44,6 +44,19 @@ def cmd_plan(a: argparse.Namespace) -> int:
     )
     hours = len(todo) * ASSUMED_SECONDS_PER_CALL / 3600
     print(f"estimate at an assumed {ASSUMED_SECONDS_PER_CALL:.0f} s/call: {hours:.1f} h")
+    plan = {
+        "model": a.model,
+        "per_source": a.per_source,
+        "prompts": list(a.prompts),
+        "calls": len(jobs),
+        "cached": len(jobs) - len(todo),
+        "calls_by_source_and_prompt": {f"{s}/{n}": c for (s, n), c in sorted(by.items())},
+        "assumed_seconds_per_call": ASSUMED_SECONDS_PER_CALL,
+        "task_ids": sorted({j.task.id for j in jobs}),
+    }
+    out = data.results_dir() / f"model_plan_{_safe(a.model)}.json"
+    data.write_json(out, plan)
+    print(f"wrote {out}")
     if a.show:
         for j in jobs[: a.show]:
             print(f"\n----- {j.task.id} [{j.prompt.name}] -----\n{j.prompt.user}")

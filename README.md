@@ -14,7 +14,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="python">
   <img src="https://img.shields.io/badge/runtime%20deps-0-brightgreen" alt="zero dependencies">
-  <img src="https://img.shields.io/badge/tests-94-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-93-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/repair%20tasks-6%2C715-blue" alt="tasks">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"></a>
 </p>
@@ -75,6 +75,11 @@ resampling *problems*, because the tasks of one problem share a test suite.
 | **4** | **What does work is more tests.** Same bugs, same search, only the number of visible asserts changes. | HumanEval overfit **43.7% → 23.9% → 10.4%** at 1 → 3 → 8.1 asserts; MBPP 35.6% → 18.0% at 1 → 3 |
 | **5** | **Knowing where the bug is helps only when tests are thin.** Restricting the search to the faulty line (an oracle no real tool has) removes a quarter of MBPP's wrong patches, and nothing measurable on HumanEval with its full suite. | MBPP 18.0% → 13.7%, paired reduction **4.4 pp** [3.6, 5.3]; HumanEval (all) 0.3 pp [−0.3, +0.9] |
 | **6** | **Comparisons and negated conditions are where repair goes wrong;** operator swaps almost never. | MBPP overfit: `compare` 37.4%, `negate_if` 30.5%, `binop` 7.5%, `boolop` 9.9% |
+
+Long solutions contribute more mutants, so the table weights each task equally. Weighting
+each *problem* equally instead (`rate_per_problem` in the results) moves MBPP to 72.2% exact
+and 14.3% overfit; smallest-first still overfits more often than a random plausible patch
+(14.3% vs 11.5%).
 
 The hypothesis the repo was built around - "the smallest diff is the right one" - did not
 hold for search-based repair. Minimality is saturated: when every candidate is one token,
@@ -279,7 +284,8 @@ instruction:
 
 Every reply is cached on disk by (model, prompt, options), turned into a program, and scored
 by the same oracle and the same four size measures as the search, with the search's result
-on the same tasks alongside. 1,053 calls:
+on the same tasks alongside. 1,053 calls, listed task by task in
+`results/model_plan_qwen2.5-coder_14b.json`:
 
 ```bash
 scripts/run_models.sh --dry-run    # job list and call count; touches no model
@@ -297,7 +303,7 @@ git clone https://github.com/hammasbuilds/minimal-diff
 cd minimal-diff
 uv sync
 
-uv run pytest -q                       # 94 tests, no dataset, no model, ~40 s
+uv run pytest -q                       # 93 tests, no dataset, no model, ~40 s
 uv run python demo.py                  # the five repairs above, live
 uv run minimal-diff show mbpp/3/binop@17 --regime k1   # any task, any regime
 uv run minimal-diff report             # re-aggregate results/classical_*.jsonl.gz
@@ -346,7 +352,7 @@ Windows 11; the sandbox caps child memory with a Job Object there and `RLIMIT_AS
 ## Tests
 
 ```bash
-uv run pytest -q     # 94
+uv run pytest -q     # 93
 uv run ruff check src tests
 ```
 
@@ -379,18 +385,19 @@ reply that is not code.
   negated condition. The repair operators offered two edits on `if not x:` - remove the
   `not`, or add another - and `not not x` ties with the real fix on every size measure and
   came first in site order. It is a no-op in a condition, so it is no longer generated.
-- **Starting Python cost more than the tests.** On this (shared, busy) machine an
-  interpreter took 0.6 s to start. One process per job gave 0.2 tasks/s; reusable workers fed
-  jobs over stdin brought the whole repair run to about an hour.
+- **Starting Python cost more than the tests.** On this shared, busy Windows machine an
+  interpreter took longer to start than a task's tests took to run, and one process per job
+  repaired a few tasks a minute. Reusable workers fed jobs over stdin brought the whole
+  repair run to about an hour.
 - **Hangs dominated what was left.** Mutated loop conditions hang constantly (2.6 timeouts per
-  MBPP task). Killing and restarting the worker for each cost about 5 s; the child now interrupts
-  its own overrunning item with `PyThreadState_SetAsyncExc` from a watchdog thread, and the
+  MBPP task). Killing and restarting the worker for each cost a timeout plus a restart; the
+  child now interrupts its own overrunning item with `PyThreadState_SetAsyncExc` from a watchdog thread, and the
   parent's kill is kept only for code stuck inside one C call. And because the visible-test
   regimes are prefixes of one assert order, a candidate can stop at its first failure without
   losing any regime's verdict - one timeout per hanging candidate instead of three.
 - **Results written in order look stalled.** `ThreadPoolExecutor.map` yields in submission
-  order, so one slow early task held the output file at 96 rows for minutes while hundreds
-  had finished behind it. I stopped a healthy run over it once.
+  order, so one slow early task held the output file still for minutes while hundreds had
+  finished behind it. I stopped a healthy run over it once.
 - **Two different candidates had the same name.** Every alternative at one site was labelled
   `compare@40`, so a by-name lookup returned five patches for one. Labels now carry the
   alternative (`compare@40:0:LtE`).

@@ -60,6 +60,10 @@ def test_full_pipeline_on_fixture_data(fixture_env, capsys):
     assert cli.main(["model", "plan", "--per-source", "5"]) == 0
     plan = capsys.readouterr().out
     assert "calls" in plan and "0 already cached" in plan
+    written = json.loads(
+        (fixture_env / "results" / "model_plan_qwen2.5-coder_14b.json").read_text()
+    )
+    assert written["calls"] == 3 * len(written["task_ids"]) and written["cached"] == 0
 
 
 def test_show_rejects_bad_ids(fixture_env, capsys):
