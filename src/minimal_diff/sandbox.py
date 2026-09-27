@@ -62,6 +62,7 @@ class Result:
     ref: str = ""
     cand: str = ""
     ref_status: str = ""
+    ref_seconds: float = 0.0  # compare mode: how long the reference took on this input
 
 
 @dataclass
@@ -334,6 +335,7 @@ def _drive(
             ref=d.get("ref", ""),
             cand=d.get("cand", ""),
             ref_status=d.get("ref_status", ""),
+            ref_seconds=d.get("ref_s", 0.0),
         )
         last = i
 

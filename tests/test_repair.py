@@ -134,3 +134,16 @@ def test_task_roundtrip_through_storage(built, tmp_path, monkeypatch):
     tasks.save(tasks.tasks_path("mbpp"), ts, {"test": True})
     assert tasks.tasks_path("mbpp").read_bytes() == before
     assert replace(ts[0], kind="x") != ts[0]
+
+
+def test_vetting_drops_inputs_the_reference_is_slow_on():
+    ref = "import time\ndef f(n):\n    if n > 5:\n        time.sleep(0.2)\n    return n\n"
+    kept = tasks._vet_inputs(ref, "f", "", ["1", "3", "9", "'x' + 1"])
+    assert kept == ["1", "3"]  # 9 is too slow, the last raises
+
+
+def test_a_patch_that_hangs_on_a_hidden_input_is_a_hang_witness(built):
+    rec, _, _ = built
+    patch = rec.reference.replace("total = 0", "total = 0\n    while len(xs) > 3:\n        pass")
+    [v] = oracle.judge(rec, [patch], item_timeout=0.5)
+    assert v.label == "overfit" and v.found_by == "hang" and "patch timeout" in v.witness

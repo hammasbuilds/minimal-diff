@@ -75,12 +75,22 @@ class BuildStats:
     tasks: int = 0
 
 
+# A hidden input is kept only if the reference answers it this fast, so a patch that runs
+# out the 1 s item budget on it is at least 20x slower than the reference - a hang, not a
+# slightly slower correct program on a busy machine. Without this, exponential references
+# (binomial coefficients by plain recursion, all permutations of a 7-letter string) sat
+# near the budget and the same patch was judged overfit on one run and not on the next.
+VET_MAX_REF_SECONDS = 0.05
+
+
 def _vet_inputs(ref: str, fn: str, setup: str, cands: list[str]) -> list[str]:
     if not cands:
         return []
     [row] = sandbox.run_compare(ref, fn, [ref], cands, setup, stop_on_first_difference=False)
     return [
-        x for x, r in zip(cands, row, strict=True) if r.status == "same" and r.ref_status == "ok"
+        x
+        for x, r in zip(cands, row, strict=True)
+        if r.status == "same" and r.ref_status == "ok" and r.ref_seconds <= VET_MAX_REF_SECONDS
     ]
 
 

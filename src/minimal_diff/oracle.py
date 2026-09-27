@@ -26,7 +26,9 @@ from .tasks import ProblemRecord
 class Verdict:
     label: str  # exact | overfit | no_witness
     witness: str = ""  # which check separated it, and how
-    # "visible" | "hidden_assert" | "near_input" | "fuzz_input" - which check found it
+    # "visible" | "hidden_assert" | "near_input" | "fuzz_input" | "hang": which check found
+    # it. "hang" is a patch that did not finish on a hidden input the reference answers in
+    # under tasks.VET_MAX_REF_SECONDS.
     found_by: str = ""
 
 
@@ -108,9 +110,11 @@ def judge(
                 how = f"{problem.entry_point}({arg}): reference {bad.ref}, patch {bad.cand}"
             else:
                 how = f"{problem.entry_point}({arg}): patch {bad.status}"
-            out[i] = Verdict(
-                "overfit", how, "near_input" if k < problem.n_near_inputs else "fuzz_input"
-            )
+            if bad.status != "differs":
+                found = "hang"
+            else:
+                found = "near_input" if k < problem.n_near_inputs else "fuzz_input"
+            out[i] = Verdict("overfit", how, found)
     for i in remaining:
         if out[i] is None:
             out[i] = Verdict("no_witness")

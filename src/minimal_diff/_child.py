@@ -160,7 +160,9 @@ def _call(ns: dict, fn: str, args_src: str) -> tuple[str, object]:
 def _run_compare(nss: _Namespaces, ctx: dict, item: dict) -> dict:
     """Call the reference and the candidate on one input and say whether they agree."""
     ref_ns = nss.get(ctx["ref"])
+    t0 = time.perf_counter()
     rs, rv = _call(ref_ns, ctx["fn"], item["input"])
+    ref_s = time.perf_counter() - t0
     try:
         cand_ns = nss.get(item["code"])
     except ItemTimeout:
@@ -168,7 +170,7 @@ def _run_compare(nss: _Namespaces, ctx: dict, item: dict) -> dict:
     except BaseException as e:
         return {"status": "differs", "ref": _show(rs, rv), "cand": f"load: {type(e).__name__}"}
     cs, cv = _call(cand_ns, ctx["fn"], item["input"])
-    out = {"ref_status": rs}
+    out = {"ref_status": rs, "ref_s": round(ref_s, 6)}
     if rs == cs and (rs == "raise" and rv == cv or rs == "ok" and _same(rv, cv)):
         out["status"] = "same"
     else:
