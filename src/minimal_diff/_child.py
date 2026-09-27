@@ -20,6 +20,7 @@ import math
 import sys
 import threading
 import time
+import types
 
 MARK = "\x1eRESULT "
 DONE = "\x1eDONE"
@@ -76,15 +77,74 @@ def _emit(obj: dict) -> None:
     _OUT.flush()
 
 
+class Incomparable(Exception):
+    """The two values cannot be judged equal or different from their values alone."""
+
+
+_OPAQUE = (
+    types.FunctionType,
+    types.BuiltinFunctionType,
+    types.MethodType,
+    types.ModuleType,
+    types.GeneratorType,
+    types.CodeType,
+    type,
+)
+
+
+def _code_key(code: types.CodeType) -> tuple:
+    consts = tuple(
+        _code_key(c) if isinstance(c, types.CodeType) else repr(c) for c in code.co_consts
+    )
+    return (code.co_code, code.co_names, code.co_varnames, consts)
+
+
+def _class_attrs(cls: type) -> dict:
+    """Class-level names a program defined (whole MRO except `object`), dunders aside."""
+    out: dict = {}
+    for k in reversed(cls.__mro__[:-1]):
+        out.update(
+            {n: v for n, v in vars(k).items() if not (n.startswith("__") and n.endswith("__"))}
+        )
+    if "__eq__" in vars(cls):
+        out["__eq__"] = vars(cls)["__eq__"]
+    return out
+
+
+def _same_class_body(ta: type, tb: type, depth: int) -> bool:
+    ca, cb = _class_attrs(ta), _class_attrs(tb)
+    if ca.keys() != cb.keys():
+        return False
+    for name in ca:
+        x, y = ca[name], cb[name]
+        fx, fy = getattr(x, "__code__", None), getattr(y, "__code__", None)
+        if fx is not None or fy is not None:
+            if fx is None or fy is None:
+                return False
+            if _code_key(fx) != _code_key(fy):
+                # Different method bodies: the objects may behave differently, or not.
+                # Nothing about their values can say which, so claim neither.
+                raise Incomparable(f"method {name} differs")
+        elif not _same(x, y, depth + 1):
+            return False
+    return True
+
+
 def _same(a: object, b: object, depth: int = 0) -> bool:
     """Equality the way a test author means it: floats within tolerance, NaN equals NaN.
 
-    The reference and the patch are executed separately, so a class either one defines is
-    two distinct classes. Instances of "the same" class are compared by class name and
-    attributes; `==` alone would call every such return value a difference.
+    Functions, classes, modules and generators are not values: comparing them raises
+    `Incomparable` rather than guessing. The reference and the patch are executed
+    separately, so a class either one defines is two distinct classes; instances are
+    compared by class name, class-level attributes, method bodies and instance attributes.
+    A class that defines `__eq__` is trusted when both objects share the class; across the
+    two programs its `__eq__` is asked first, and a "no" is not taken as proof (it may just
+    be an `isinstance` check failing across namespaces).
     """
     if depth > 50:  # a cyclic structure: give up the structural walk, fall back to ==
         return _eq(a, b)
+    if isinstance(a, _OPAQUE) or isinstance(b, _OPAQUE):
+        raise Incomparable(f"{type(a).__name__} vs {type(b).__name__}")
     if isinstance(a, bool) or isinstance(b, bool):
         return type(a) is type(b) and a == b
     if isinstance(a, int | float) and isinstance(b, int | float):
@@ -102,12 +162,17 @@ def _same(a: object, b: object, depth: int = 0) -> bool:
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_same(a[k], b[k], depth + 1) for k in a)
     ta, tb = type(a), type(b)
-    if ta.__qualname__ == tb.__qualname__ and hasattr(a, "__dict__") and hasattr(b, "__dict__"):
-        # Two instances of "the same" program-defined class. Their own `__eq__` decides
-        # if they share a class that defines one; otherwise object identity would call
-        # every pair different, so compare attributes.
-        if ta is tb and ta.__eq__ is not object.__eq__:
-            return _eq(a, b)
+    user = ta.__module__ not in ("builtins",) and hasattr(a, "__dict__")
+    if user and ta.__qualname__ == tb.__qualname__ and hasattr(b, "__dict__"):
+        custom_eq = "__eq__" in vars(ta) or "__eq__" in vars(tb)
+        if ta is tb:
+            return _eq(a, b) if custom_eq else _same(vars(a), vars(b), depth + 1)
+        if not _same_class_body(ta, tb, depth):
+            return False
+        if custom_eq:
+            if _eq(a, b):
+                return True
+            raise Incomparable(f"{ta.__qualname__}.__eq__ said no across programs")
         return _same(vars(a), vars(b), depth + 1)
     if ta is not tb:
         return False
@@ -192,7 +257,12 @@ def _run_compare(nss: _Namespaces, ctx: dict, item: dict) -> dict:
         return {"status": "differs", "ref": _show(rs, rv), "cand": f"load: {type(e).__name__}"}
     cs, cv = _call(cand_ns, ctx["fn"], item["input"])
     out = {"ref_status": rs}
-    if rs == cs and (rs == "raise" and rv == cv or rs == "ok" and _same(rv, cv)):
+    try:
+        same = rs == cs and (rs == "raise" and rv == cv or rs == "ok" and _same(rv, cv))
+    except Incomparable as e:
+        out.update(status="incomparable", detail=str(e)[:200])
+        return out
+    if same:
         out["status"] = "same"
     else:
         out.update(status="differs", ref=_show(rs, rv), cand=_show(cs, cv))

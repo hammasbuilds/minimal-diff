@@ -126,7 +126,8 @@ def _judge(
             item_timeout=budget,
         )
         for i, row in zip(remaining, rows, strict=True):
-            bad = sandbox.first_failure(row, ok="same")
+            # "incomparable" (say, two functions returned) is evidence of nothing.
+            bad = sandbox.first_failure(row, ok=("same", "incomparable"))
             if bad is None:
                 out[i] = Verdict("no_witness")
                 continue

@@ -134,13 +134,59 @@ def test_compare_arguments_may_name_what_the_program_or_setup_defines():
     assert rows[1][0].status == "differs"
 
 
-def test_instances_of_the_programs_own_classes_compare_by_value():
-    """Reference and patch are exec'd separately, so `Pair` is two distinct classes."""
-    ref = "class Pair:\n    def __init__(self, a):\n        self.a = a\ndef mk(x):\n    return [Pair(x)]\n"
-    other = ref.replace("Pair(x)", "Pair(x + 1)")
-    rows = sandbox.run_compare(ref, "mk", [ref, other], ["3"])
-    assert rows[0][0].status == "same"
-    assert rows[1][0].status == "differs"
+PAIR = "class Pair:\n    def __init__(self, a):\n        self.a = a\ndef mk(x):\n    return [Pair(x)]\n"
+
+
+def _cmp(ref, cands, arg="3"):
+    return [row[0] for row in sandbox.run_compare(ref, "mk", cands, [arg])]
+
+
+def test_instances_of_genuinely_separate_classes_compare_by_value():
+    """A different program text runs in its own namespace, so its `Pair` is a distinct
+    class object from the reference's - the case that matters for a patch."""
+    twin = PAIR + "\n_unrelated = 0\n"
+    other = PAIR.replace("Pair(x)", "Pair(x + 1)")
+    same, diff = _cmp(PAIR, [twin, other])
+    assert same.status == "same"
+    assert diff.status == "differs"
+
+
+def test_class_level_attributes_are_part_of_the_value():
+    ref = "class P:\n    k = 1\n    def __init__(self, a):\n        self.a = a\ndef mk(x):\n    return P(x)\n"
+    other = ref.replace("k = 1", "k = 2")
+    assert _cmp(ref, [other])[0].status == "differs"
+
+
+def test_different_method_bodies_are_incomparable_not_equal():
+    ref = (
+        "class P:\n    def __init__(self, a):\n        self.a = a\n"
+        "    def g(self):\n        return self.a\ndef mk(x):\n    return P(x)\n"
+    )
+    other = ref.replace("return self.a", "return -self.a")
+    assert _cmp(ref, [other])[0].status == "incomparable"
+
+
+def test_functions_lambdas_and_closures_are_never_equal():
+    ref = "def mk(x):\n    return lambda y: y + x\n"
+    other = "def mk(x):\n    return lambda y: y - x\n"
+    assert _cmp(ref, [other])[0].status == "incomparable"
+    # and an input whose answer is a function is not kept as a hidden input at all
+    from minimal_diff import tasks
+
+    assert tasks._vet_inputs(ref, "mk", "", ["3"]) == []
+
+
+def test_a_class_with_its_own_eq_is_asked_first():
+    ref = (
+        "class P:\n    def __init__(self, a, noise):\n        self.a, self.noise = a, noise\n"
+        "    def __eq__(self, o):\n        return self.a == o.a\n"
+        "def mk(x):\n    return P(x, object())\n"
+    )
+    # __eq__ ignores `noise`, so the two are equal although their attributes differ
+    assert _cmp(ref, [ref + "\n_unrelated = 0\n"])[0].status == "same"
+    strict = ref.replace("return self.a == o.a", "return isinstance(o, P) and self.a == o.a")
+    # across two programs isinstance fails: that "no" proves nothing
+    assert _cmp(strict, [strict + "\n_u = 0\n"])[0].status == "incomparable"
 
 
 def test_every_item_reports_how_long_it_took():

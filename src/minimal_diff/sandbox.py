@@ -53,7 +53,8 @@ MEMORY_LIMIT_MB = 512
 class Result:
     """What happened to one item.
 
-    status is one of: pass, fail, error (assert mode); same, differs (compare mode);
+    status is one of: pass, fail, error (assert mode); same, differs, incomparable
+    (compare mode: the two return values cannot be judged either way);
     timeout, crash (either mode); skipped (an earlier item in its group already failed).
     """
 
@@ -403,9 +404,10 @@ def run_compare(
     return [res[ci * k : (ci + 1) * k] for ci in range(len(candidates))]
 
 
-def first_failure(results: Iterable[Result], ok: str = "pass") -> Result | None:
-    """The first result that is neither `ok` nor skipped, if any."""
+def first_failure(results: Iterable[Result], ok: str | tuple[str, ...] = "pass") -> Result | None:
+    """The first result whose status is neither in `ok` nor skipped, if any."""
+    good = (ok,) if isinstance(ok, str) else ok
     for r in results:
-        if r.status not in (ok, "skipped"):
+        if r.status not in good and r.status != "skipped":
             return r
     return None
