@@ -74,8 +74,6 @@ class Edit:
     code: str
     kind: str  # compare | binop | boolop | const | negate_if (+ repair-only kinds)
     where: str  # "<kind>@<site index>", plus ":<which alternative>" for repair edits
-    line: int  # 1-based line of the edited node in the *input* program
-    end_line: int
 
 
 def parse(code: str) -> ast.Module | None:
@@ -150,56 +148,49 @@ def _unnegate(n: ast.AST) -> None:
     n.test = n.test.operand  # type: ignore[attr-defined]
 
 
-def _span(n: ast.AST) -> tuple[int, int]:
-    line = getattr(n, "lineno", 0)
-    return line, getattr(n, "end_lineno", line) or line
-
-
-def _injection_changes(n: ast.AST) -> Iterator[tuple[str, str, Callable[[ast.AST], None], ast.AST]]:
+def _injection_changes(n: ast.AST) -> Iterator[tuple[str, str, Callable[[ast.AST], None]]]:
     """The one mutation mbpp-false-accepts applies at this node, if any."""
     if isinstance(n, ast.Compare) and n.ops and type(n.ops[0]) in CMP_SWAP:
-        yield "compare", "", _set_op("ops", CMP_SWAP[type(n.ops[0])], 0), n
+        yield "compare", "", _set_op("ops", CMP_SWAP[type(n.ops[0])], 0)
     elif isinstance(n, ast.BinOp) and type(n.op) in BIN_SWAP:
-        yield "binop", "", _set_op("op", BIN_SWAP[type(n.op)]), n
+        yield "binop", "", _set_op("op", BIN_SWAP[type(n.op)])
     elif isinstance(n, ast.BoolOp) and type(n.op) in BOOL_SWAP:
-        yield "boolop", "", _set_op("op", BOOL_SWAP[type(n.op)]), n
+        yield "boolop", "", _set_op("op", BOOL_SWAP[type(n.op)])
     elif _is_int(n):
-        yield "const", "", _bump(+1), n
+        yield "const", "", _bump(+1)
     elif isinstance(n, ast.If):
-        # The fault is in the condition, so that is where it is located - not the whole
-        # `if` block, which would make every edit inside its body look "related".
-        yield "negate_if", "", _negate, n.test
+        yield "negate_if", "", _negate
 
 
 def _family(op: type, families: tuple[tuple[type, ...], ...]) -> tuple[type, ...]:
     return next((f for f in families if op in f), ())
 
 
-def _repair_changes(n: ast.AST) -> Iterator[tuple[str, str, Callable[[ast.AST], None], ast.AST]]:
+def _repair_changes(n: ast.AST) -> Iterator[tuple[str, str, Callable[[ast.AST], None]]]:
     """Every neighbouring edit at this node."""
     if isinstance(n, ast.Compare):
         for pos, op in enumerate(n.ops):
             for alt in _family(type(op), CMP_FAMILIES):
                 if alt is not type(op):
-                    yield "compare", f"{pos}:{alt.__name__}", _set_op("ops", alt, pos), n
+                    yield "compare", f"{pos}:{alt.__name__}", _set_op("ops", alt, pos)
     elif isinstance(n, ast.BinOp | ast.AugAssign):
         kind = "binop" if isinstance(n, ast.BinOp) else "augassign"
         for alt in _family(type(n.op), ARITH_FAMILIES):
             if alt is not type(n.op):
-                yield kind, alt.__name__, _set_op("op", alt), n
+                yield kind, alt.__name__, _set_op("op", alt)
     elif isinstance(n, ast.BoolOp):
         alt = BOOL_SWAP[type(n.op)]
-        yield "boolop", alt.__name__, _set_op("op", alt), n
+        yield "boolop", alt.__name__, _set_op("op", alt)
     elif _is_int(n):
-        yield "const", "+1", _bump(+1), n
-        yield "const", "-1", _bump(-1), n
+        yield "const", "+1", _bump(+1)
+        yield "const", "-1", _bump(-1)
     elif isinstance(n, ast.If | ast.While | ast.IfExp):
         if isinstance(n.test, ast.UnaryOp) and isinstance(n.test.op, ast.Not):
             # Only un-negate. `not not x` as a condition is `x` again: a no-op edit that
             # ties with the real fix on every size measure and would be picked first.
-            yield "unnegate_if", "", _unnegate, n.test
+            yield "unnegate_if", "", _unnegate
         else:
-            yield "negate_if", "", _negate, n.test
+            yield "negate_if", "", _negate
 
 
 def _edits(code: str, changes, limit: int | None = None) -> list[Edit]:
@@ -209,7 +200,7 @@ def _edits(code: str, changes, limit: int | None = None) -> list[Edit]:
     seen = {ast.unparse(tree)}
     out: list[Edit] = []
     for idx, node in enumerate(preorder(tree)):
-        for kind, detail, change, located in changes(node):
+        for kind, detail, change in changes(node):
             src = _apply(tree, idx, change)
             if src is None:
                 continue
@@ -217,9 +208,8 @@ def _edits(code: str, changes, limit: int | None = None) -> list[Edit]:
             if src in seen:
                 continue
             seen.add(src)
-            line, end = _span(located)
             where = f"{kind}@{idx}" + (f":{detail}" if detail else "")
-            out.append(Edit(src, kind, where, line, end))
+            out.append(Edit(src, kind, where))
             if limit and len(out) >= limit:
                 return out
     return out

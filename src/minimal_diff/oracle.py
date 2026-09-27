@@ -29,10 +29,6 @@ class Verdict:
     # "visible" | "hidden_assert" | "near_input" | "fuzz_input" - which check found it
     found_by: str = ""
 
-    @property
-    def proven_wrong(self) -> bool:
-        return self.label == "overfit"
-
 
 def judge(
     problem: ProblemRecord,

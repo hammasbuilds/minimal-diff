@@ -41,4 +41,3 @@ def test_deterministic_with_seed():
 def test_fmt():
     r = {"rate": 0.4123, "ci95": [0.38, 0.445]}
     assert stats.fmt(r) == "41.2% [38.0, 44.5]"
-    assert stats.fmt(r, pct=False) == "0.41 [0.38, 0.45]"

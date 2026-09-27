@@ -3,6 +3,7 @@ import ast
 import pytest
 
 from minimal_diff import operators
+from minimal_diff.diffmetrics import changed_old_lines
 
 from .conftest import CLAMP_REFERENCE
 
@@ -48,14 +49,10 @@ def test_neighbours_are_distinct_and_never_the_input():
     assert code not in {n.code for n in ns}
 
 
-def test_neighbour_lines_point_at_the_edited_line():
+def test_every_neighbour_changes_exactly_one_line():
     code = operators.normalise(CLAMP_REFERENCE)
-    lines = code.splitlines()
     for e in operators.neighbours(code):
-        changed = [
-            i + 1 for i, (a, b) in enumerate(zip(lines, e.code.splitlines(), strict=True)) if a != b
-        ]
-        assert changed and all(e.line <= c <= e.end_line for c in changed), e.where
+        assert len(changed_old_lines(code, e.code)) == 1, e.where
 
 
 def test_negation_is_undone_by_unnegation():

@@ -57,12 +57,9 @@ def cluster_rate(
     }
 
 
-def fmt(r: dict, pct: bool = True) -> str:
+def fmt(r: dict) -> str:
     """`41.2% [38.0, 44.5]` - the form every table in the README uses."""
     if not r or r.get("rate") is None:
         return "n/a"
-    if pct:
-        lo, hi = r["ci95"]
-        return f"{100 * r['rate']:.1f}% [{100 * lo:.1f}, {100 * hi:.1f}]"
     lo, hi = r["ci95"]
-    return f"{r['rate']:.2f} [{lo:.2f}, {hi:.2f}]"
+    return f"{100 * r['rate']:.1f}% [{100 * lo:.1f}, {100 * hi:.1f}]"
