@@ -281,3 +281,40 @@ def test_rows_are_written_as_they_are_scored_and_a_rerun_resumes(task_and_proble
     out.write_text(out.read_text() + '{"half a li', encoding="utf-8")  # killed mid-write
     n = arm.run(jobs, FakeClient(lambda s, p: _fix_reply(t, rec, "fix")), out, progress=False)
     assert n == 2 and len(arm.read_rows(out)) == 3
+
+
+def test_prompts_differ_by_exactly_one_thing(task_and_problem):
+    t, rec = task_and_problem
+    ps = {n: prompts.build(t, rec, n).user for n in prompts.PROMPTS}
+    sentence = "not merely make these tests pass"
+    assert all(sentence in p for p in ps.values())
+    assert "laziest" not in ps["plain"] and "laziest" in ps["minimal"] and "laziest" in ps["diff"]
+    lazy = ps["minimal"].split("laziest")[1].split("Reply")[0]
+    assert lazy == ps["diff"].split("laziest")[1].split("Reply")[0]
+
+
+def test_truncated_replies_leave_every_other_denominator(task_and_problem):
+    from minimal_diff.model.client import Reply
+
+    t, rec = task_and_problem
+    job = arm.Job(t, rec, prompts.build(t, rec, "plain"))
+    rows = [
+        arm.score(job, _fix_reply(t, rec, "fix")),
+        arm.score(job, Reply("```python\npartial", "length")),
+    ]
+    s = arm.summarise(rows)["prompts"]["plain"]
+    assert s["n"] == 1 and s["n_truncated"] == 1
+    assert s["exact"]["rate"] == 1.0 and s["truncated"]["rate"] == 0.5
+
+
+def test_a_proxy_in_the_environment_is_not_used_for_a_local_server(monkeypatch):
+    ok = json.dumps({"message": {"content": "hi"}})
+    srv = _Ollama([(200, ok)])
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")  # nothing listens there
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    try:
+        assert OllamaClient(url=srv.url, backoff=0.01).generate("s", "p").text == "hi"
+    finally:
+        srv.close()

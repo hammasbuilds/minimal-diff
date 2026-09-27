@@ -166,15 +166,19 @@ def summarise(rows: list[dict], classical: dict[str, dict] | None = None) -> dic
     """
     out: dict = {"n_rows": len(rows), "prompts": {}}
     for name in prompts.PROMPTS:
-        rs = [r for r in rows if r["prompt"] == name]
-        if not rs:
+        every = [r for r in rows if r["prompt"] == name]
+        if not every:
             continue
+        # A reply cut off by the token limit is not the model's repair: it is reported as
+        # its own rate and left out of every other denominator.
+        rs = [r for r in every if r["verdict"] != "truncated"]
         plaus = [r for r in rs if r.get("plausible")]
         sized = [r for r in rs if r.get("parsed")]
         s = {
             "n": len(rs),
+            "n_truncated": len(every) - len(rs),
+            "truncated": stats.cluster_rate(every, lambda r: float(r["verdict"] == "truncated")),
             "parsed": stats.cluster_rate(rs, lambda r: float(r["parsed"])),
-            "truncated": stats.cluster_rate(rs, lambda r: float(r["verdict"] == "truncated")),
             "plausible": stats.cluster_rate(rs, lambda r: float(r["plausible"])),
             "exact": stats.cluster_rate(rs, lambda r: float(r["verdict"] == "exact")),
             "no_witness": stats.cluster_rate(rs, lambda r: float(r["verdict"] == "no_witness")),

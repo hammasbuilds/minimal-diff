@@ -11,6 +11,7 @@ import hashlib
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -40,6 +41,15 @@ class Client(Protocol):
     model: str
 
     def generate(self, system: str, prompt: str) -> Reply: ...
+
+
+def _opener(url: str) -> urllib.request.OpenerDirector:
+    """No proxy for a local server. urllib honours HTTP_PROXY even for 127.0.0.1, and a
+    corporate or dead proxy then swallows every request to the local Ollama."""
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if host in ("localhost", "127.0.0.1", "::1") or host.endswith(".localhost"):
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener()
 
 
 class ModelUnavailable(RuntimeError):
@@ -85,7 +95,7 @@ class OllamaClient:
             f"{self.url}/api/chat", data=body, headers={"Content-Type": "application/json"}
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with _opener(self.url).open(req, timeout=self.timeout) as resp:
                 body = resp.read().decode("utf-8")
         except urllib.error.HTTPError as e:
             detail = f"HTTP {e.code}: {e.read()[:200]!r}"

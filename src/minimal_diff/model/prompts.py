@@ -8,7 +8,9 @@
   diff that does not apply is scored as a failed repair, not retried.
 
 Every prompt shows the same program, the same visible asserts, and which of them fail
-and how, so differences between arms are the instruction's doing.
+and how, and every prompt says the fix must make the program correct rather than merely
+pass the tests. So `minimal` differs from `plain` only by the laziness instruction, and
+`diff` from `minimal` only by the output format.
 """
 
 from __future__ import annotations
@@ -33,25 +35,28 @@ These tests are run against it:
 {tests}
 """
 
-_PLAIN = """\
-Fix the bug so that the program is correct.
+# Shared by all three prompts, so no arm is the only one told that passing the tests is not
+# the goal.
+_CORRECT = "The fix must make the program correct, not merely make these tests pass."
+
+_PLAIN = f"""\
+Fix the bug. {_CORRECT}
 
 Reply with the complete corrected program in a single ```python code block."""
 
-_MINIMAL = """\
+_LAZY = """\
 You are the laziest senior developer on the team: the best fix is the one that changes \
 the least. Find the bug and fix it with the smallest possible edit. Do not refactor, \
 rename, reformat, reorder, add comments, add error handling or change any line that is \
-not part of the bug. The fix must make the program correct, not merely make these tests \
-pass.
+not part of the bug."""
+
+_MINIMAL = f"""\
+{_LAZY} {_CORRECT}
 
 Reply with the complete corrected program in a single ```python code block."""
 
-_DIFF = """\
-You are the laziest senior developer on the team: the best fix is the one that changes \
-the least. Find the bug and fix it with the smallest possible edit. Do not refactor, \
-rename, reformat or touch any line that is not part of the bug. The fix must make the \
-program correct, not merely make these tests pass.
+_DIFF = f"""\
+{_LAZY} {_CORRECT}
 
 Reply with ONLY a unified diff against the program above, in a single ```diff code \
 block, using `--- a/solution.py` and `+++ b/solution.py` headers and standard `@@` \
