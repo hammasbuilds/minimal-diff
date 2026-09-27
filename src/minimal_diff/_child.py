@@ -147,7 +147,9 @@ def _run_assert(nss: _Namespaces, item: dict) -> dict:
 
 def _call(ns: dict, fn: str, args_src: str) -> tuple[str, object]:
     try:
-        args = eval("(" + args_src + ",)", {})
+        # In the program's own namespace, so arguments may name what it defines
+        # (`Pair(5, 24)`) or what the setup code built (`root`).
+        args = eval("(" + args_src + ",)", ns)
         return "ok", ns[fn](*args)
     except ItemTimeout:
         raise

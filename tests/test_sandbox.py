@@ -121,3 +121,14 @@ def test_worker_reuse_can_leak_state_which_is_why_isolation_is_measured():
     alone = sandbox.run_asserts([victim], ["assert f(-1) == 2"], fresh=True)
     assert statuses(pooled)[1] == ["fail"]
     assert statuses(alone) == [["pass"]]
+
+
+def test_compare_arguments_may_name_what_the_program_or_setup_defines():
+    ref = "class Pair:\n    def __init__(self, a):\n        self.a = a\ndef first(ps):\n    return ps[0].a\n"
+    wrong = ref.replace("ps[0]", "ps[-1]")
+    rows = sandbox.run_compare(
+        ref, "first", [ref, wrong], ["[Pair(1), Pair(2)]", "box"], setup="box = [Pair(7)]"
+    )
+    assert [r.status for r in rows[0]] == ["same", "same"]
+    assert rows[0][0].ref_status == "ok"
+    assert rows[1][0].status == "differs"

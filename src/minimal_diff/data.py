@@ -16,6 +16,7 @@ import gzip
 import json
 import os
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,6 +87,38 @@ def _missing(path: Path) -> FileNotFoundError:
     )
 
 
+def entry_point(code: str, tests: tuple[str, ...]) -> str | None:
+    """The function the asserts test: the first name they call that the solution defines.
+
+    Reading the first call off the assert is what mbpp-false-accepts did, and it names
+    `int` for `assert int(lobb_num(5, 3)) == 35` (task 912) - the differential tester
+    then calls `int` on both programs and every input "separates" nothing.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            defined = {
+                n.name
+                for n in ast.walk(ast.parse(code))
+                if isinstance(n, ast.FunctionDef | ast.ClassDef)
+            }
+    except SyntaxError:
+        defined = set()
+    for t in tests:
+        try:
+            tree = ast.parse(t.strip())
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in defined
+            ):
+                return node.func.id
+    return next((m.group(1) for t in tests if (m := _CALLED.search(t))), None)
+
+
 def load_mbpp(limit: int | None = None) -> list[Problem]:
     """All 974 MBPP problems as released (the `full` split)."""
     path = data_dir() / "raw" / "mbpp.jsonl"
@@ -97,7 +130,7 @@ def load_mbpp(limit: int | None = None) -> list[Problem]:
             continue
         r = json.loads(line)
         tests = tuple(r["test_list"])
-        entry = next((m.group(1) for t in tests if (m := _CALLED.search(t))), None)
+        entry = entry_point(r["code"], tests)
         if entry is None:
             continue
         out.append(

@@ -150,3 +150,11 @@ def test_fuzz_inputs_are_seeded_typed_and_new():
 
 def test_fuzz_skips_seeds_that_are_not_literals():
     assert inputs.fuzz_inputs(["Node(3)", "make()"], n=5) == []
+
+
+def test_entry_point_is_the_function_the_solution_defines():
+    code = "def lobb_num(n, m):\n    return n * m\n"
+    assert data.entry_point(code, ("assert int(lobb_num(5, 3)) == 35",)) == "lobb_num"
+    assert data.entry_point("def f(x):\n    return x\n", ("assert set(f([1])) == {1}",)) == "f"
+    # nothing defined matches: fall back to the first call, as the dataset loaders did
+    assert data.entry_point("x = 1", ("assert g(1) == 2",)) == "g"
