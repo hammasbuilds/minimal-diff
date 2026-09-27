@@ -123,6 +123,9 @@ def _regime(rs: list[dict], g: str, kinds: Iterable[str]) -> dict:
         "diff_overfit_tied_minus_random": cr(
             rs, _paired(g, _sub(g, "tied_overfit"), _sub(g, "random_overfit"))
         ),
+        "diff_overfit_smallest_minus_random": cr(
+            rs, _paired(g, small_over, _sub(g, "random_overfit"))
+        ),
         "diff_overfit_smallest_minus_at_fault": cr(
             rs, _paired(g, small_over, _is("overfit", g, "at_fault"))
         ),
@@ -140,6 +143,15 @@ def _regime(rs: list[dict], g: str, kinds: Iterable[str]) -> dict:
             lambda r: (
                 None
                 if (p := _pick(r, g, "smallest")) is None or p["verdict"] != "overfit"
+                else float(not p["size"]["touches_fault"])
+            ),
+        ),
+        # Correct-looking patches that compensate for the bug somewhere else.
+        "no_witness_pick_off_fault": cr(
+            rs,
+            lambda r: (
+                None
+                if (p := _pick(r, g, "smallest")) is None or p["verdict"] != "no_witness"
                 else float(not p["size"]["touches_fault"])
             ),
         ),

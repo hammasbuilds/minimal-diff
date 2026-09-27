@@ -145,6 +145,16 @@
           ],
           "rate_per_problem": -0.0003
         },
+        "diff_overfit_smallest_minus_random": {
+          "n": 1167,
+          "n_clusters": 151,
+          "rate": -0.0012,
+          "ci95": [
+            -0.024,
+            0.022
+          ],
+          "rate_per_problem": -0.0082
+        },
         "diff_overfit_smallest_minus_at_fault": {
           "n": 1167,
           "n_clusters": 151,
@@ -184,6 +194,16 @@
             0.47
           ],
           "rate_per_problem": 0.347
+        },
+        "no_witness_pick_off_fault": {
+          "n": 173,
+          "n_clusters": 78,
+          "rate": 0.1098,
+          "ci95": [
+            0.0559,
+            0.1702
+          ],
+          "rate_per_problem": 0.1207
         },
         "overfit_pick_found_by": {
           "visible": 432,
@@ -481,6 +501,16 @@
           ],
           "rate_per_problem": 0.0076
         },
+        "diff_overfit_smallest_minus_random": {
+          "n": 1167,
+          "n_clusters": 151,
+          "rate": 0.0187,
+          "ci95": [
+            -0.0014,
+            0.0404
+          ],
+          "rate_per_problem": 0.0157
+        },
         "diff_overfit_smallest_minus_at_fault": {
           "n": 1167,
           "n_clusters": 151,
@@ -520,6 +550,16 @@
             0.337
           ],
           "rate_per_problem": 0.2219
+        },
+        "no_witness_pick_off_fault": {
+          "n": 235,
+          "n_clusters": 87,
+          "rate": 0.1021,
+          "ci95": [
+            0.0619,
+            0.1524
+          ],
+          "rate_per_problem": 0.1086
         },
         "overfit_pick_found_by": {
           "visible": 175,
@@ -817,6 +857,16 @@
           ],
           "rate_per_problem": 0.0066
         },
+        "diff_overfit_smallest_minus_random": {
+          "n": 1167,
+          "n_clusters": 151,
+          "rate": 0.0281,
+          "ci95": [
+            0.0128,
+            0.0438
+          ],
+          "rate_per_problem": 0.0268
+        },
         "diff_overfit_smallest_minus_at_fault": {
           "n": 1167,
           "n_clusters": 151,
@@ -856,6 +906,16 @@
             0.1284
           ],
           "rate_per_problem": 0.0816
+        },
+        "no_witness_pick_off_fault": {
+          "n": 289,
+          "n_clusters": 93,
+          "rate": 0.0865,
+          "ci95": [
+            0.0519,
+            0.1266
+          ],
+          "rate_per_problem": 0.0931
         },
         "overfit_pick_found_by": {
           "near_input": 109,
@@ -1052,6 +1112,12 @@
         "mean_lines": 1.0,
         "share_touching_fault": 0.8746
       }
+    },
+    "hidden_inputs_per_problem": {
+      "mean": 485.6,
+      "median": 556,
+      "mean_near": 211.2,
+      "problems_with_none": 0
     }
   },
   "mbpp": {
@@ -1200,6 +1266,16 @@
           ],
           "rate_per_problem": 0.004
         },
+        "diff_overfit_smallest_minus_random": {
+          "n": 5548,
+          "n_clusters": 774,
+          "rate": 0.0035,
+          "ci95": [
+            -0.0068,
+            0.014
+          ],
+          "rate_per_problem": 0.0162
+        },
         "diff_overfit_smallest_minus_at_fault": {
           "n": 5548,
           "n_clusters": 774,
@@ -1239,6 +1315,16 @@
             0.5282
           ],
           "rate_per_problem": 0.3987
+        },
+        "no_witness_pick_off_fault": {
+          "n": 621,
+          "n_clusters": 274,
+          "rate": 0.1546,
+          "ci95": [
+            0.1168,
+            0.1941
+          ],
+          "rate_per_problem": 0.1198
         },
         "overfit_pick_found_by": {
           "visible": 1283,
@@ -1537,6 +1623,16 @@
           ],
           "rate_per_problem": 0.0066
         },
+        "diff_overfit_smallest_minus_random": {
+          "n": 5548,
+          "n_clusters": 774,
+          "rate": 0.0192,
+          "ci95": [
+            0.011,
+            0.0274
+          ],
+          "rate_per_problem": 0.0275
+        },
         "diff_overfit_smallest_minus_at_fault": {
           "n": 5548,
           "n_clusters": 774,
@@ -1576,6 +1672,16 @@
             0.374
           ],
           "rate_per_problem": 0.3157
+        },
+        "no_witness_pick_off_fault": {
+          "n": 823,
+          "n_clusters": 329,
+          "rate": 0.1312,
+          "ci95": [
+            0.1001,
+            0.164
+          ],
+          "rate_per_problem": 0.1002
         },
         "overfit_pick_found_by": {
           "near_input": 852,
@@ -1873,6 +1979,16 @@
           ],
           "rate_per_problem": 0.0066
         },
+        "diff_overfit_smallest_minus_random": {
+          "n": 5548,
+          "n_clusters": 774,
+          "rate": 0.0192,
+          "ci95": [
+            0.011,
+            0.0274
+          ],
+          "rate_per_problem": 0.0275
+        },
         "diff_overfit_smallest_minus_at_fault": {
           "n": 5548,
           "n_clusters": 774,
@@ -1912,6 +2028,16 @@
             0.374
           ],
           "rate_per_problem": 0.3157
+        },
+        "no_witness_pick_off_fault": {
+          "n": 823,
+          "n_clusters": 329,
+          "rate": 0.1312,
+          "ci95": [
+            0.1001,
+            0.164
+          ],
+          "rate_per_problem": 0.1002
         },
         "overfit_pick_found_by": {
           "near_input": 852,
@@ -2109,6 +2235,12 @@
         "mean_lines": 1.0,
         "share_touching_fault": 0.6307
       }
+    },
+    "hidden_inputs_per_problem": {
+      "mean": 291.5,
+      "median": 366.0,
+      "mean_near": 52.4,
+      "problems_with_none": 4
     }
   }
 }

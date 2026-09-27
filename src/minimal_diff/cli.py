@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import re
+import statistics
 import sys
 from pathlib import Path
 
@@ -89,6 +91,18 @@ def cmd_report(a: argparse.Namespace) -> int:
         print("no results yet: run `minimal-diff repair` first", file=sys.stderr)
         return 1
     summary = study.summarise(rows)
+    for source in summary:
+        with contextlib.suppress(FileNotFoundError):
+            counts = [
+                (len(p.hidden_inputs), p.n_near_inputs)
+                for p in tasks.load_problems(source).values()
+            ]
+            summary[source]["hidden_inputs_per_problem"] = {
+                "mean": round(statistics.mean(h for h, _ in counts), 1),
+                "median": statistics.median(h for h, _ in counts),
+                "mean_near": round(statistics.mean(n for _, n in counts), 1),
+                "problems_with_none": sum(h == 0 for h, _ in counts),
+            }
     out = data.results_dir() / "classical_repair.json"
     out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     for source, s in summary.items():

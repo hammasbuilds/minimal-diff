@@ -1,4 +1,4 @@
-"""Repair four real MBPP/HumanEval bugs whose correct fix is known, and show what the search returns.
+"""Repair five real MBPP/HumanEval bugs whose fix is known, and show what the search returns.
 
 Each task is a reference solution with one injected single-point bug and at least one
 visible assert that fails. The classical repair search enumerates every one-edit
@@ -27,7 +27,7 @@ DEMO = [
     (
         "mbpp/3/binop@17",
         "all",
-        "2. MBPP's three asserts do not: two one-token patches pass, the search returns the wrong one",
+        "2. MBPP's three asserts do not: two one-token patches pass, the wrong one is returned",
     ),
     (
         "mbpp/53/compare@5",

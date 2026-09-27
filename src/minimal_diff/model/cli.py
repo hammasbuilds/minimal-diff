@@ -10,7 +10,6 @@ from .. import data, study, tasks
 from . import arm, prompts
 from .client import DEFAULT_MODEL, DEFAULT_URL, CachedClient, ModelUnavailable, OllamaClient
 
-
 # Measured nowhere yet - this is only for the dry run's time estimate, and it says so.
 ASSUMED_SECONDS_PER_CALL = 12.0
 
