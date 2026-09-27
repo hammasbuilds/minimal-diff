@@ -96,7 +96,7 @@ type-preserving mutations of the same arguments). Arguments are evaluated in the
 own namespace, so an input may name a class the solution defines or an object its setup code
 built. An input is kept only if the reference answers it in under 0.05 s, so a patch that runs
 out its 1 s budget is at least 20 times slower - a hang, not a busy machine. After vetting, an
-MBPP problem has 292 hidden inputs on average (52 near), a HumanEval problem 484 (210 near);
+MBPP problem has 292 hidden inputs on average (52.5 near), a HumanEval problem 484 (210 near);
 no problem has none.
 
 Of the 961 overfit patches MBPP returns with all three asserts shown, 844 were caught by a
