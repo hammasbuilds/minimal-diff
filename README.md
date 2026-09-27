@@ -14,7 +14,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="python">
   <img src="https://img.shields.io/badge/runtime%20deps-0-brightgreen" alt="zero dependencies">
-  <img src="https://img.shields.io/badge/tests-94-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-98-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/repair%20tasks-6%2C715-blue" alt="tasks">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"></a>
 </p>
@@ -59,7 +59,7 @@ to *reach* the right answer. The only question is whether the tests and the size
 > **They mostly do not need size to pick it, and when they fail, size does not rescue them.
 > Almost every plausible patch is a one-token change, the wrong ones as small as the right
 > one. What separates them is how many tests the repairer is shown: with one failing assert
-> 44% of returned HumanEval patches are provably wrong, with all ~8 asserts 10%.**
+> 42% of returned HumanEval patches are provably wrong, with all ~8 asserts 8%.**
 
 ## Findings
 
@@ -69,21 +69,21 @@ resampling *problems*, because the tasks of one problem share a test suite.
 
 | | Finding | The numbers |
 |---|---|---|
-| **1** | **MBPP's three asserts: the returned patch is the known fix two times in three, and provably wrong in one task out of six.** | exact **67.1%** [64.8, 69.3] · no witness 14.8% · **overfit 18.0%** [16.2, 19.9] |
-| **2** | **Preferring the smallest plausible patch buys nothing - slightly less than nothing.** Returning *any* plausible patch at random overfits less often. With ties broken at random, "smallest" is 0.4 points worse (paired); with ties broken by site order, as the search does, 1.9 points worse. | MBPP overfit: any plausible 16.1% · smallest, random tie 16.5% (paired **+0.39 pp** [+0.15, +0.61]) · smallest, site order 18.0% (paired +1.92 pp [+1.10, +2.74]); HumanEval (all) site order +2.81 pp [+1.28, +4.38] |
-| **3** | **Because wrong patches are just as small.** 39% of tasks have a tie at the minimum size; in 28% a provably wrong patch is at least as small as the fix. Mean size of a wrong plausible patch: 1.16 tokens; of the fix: 1.06. | tie at smallest 39.2% · wrong patch ≤ fix 27.5% [25.0, 30.1] |
-| **4** | **What does work is more tests.** Same bugs, same search, only the number of visible asserts changes. | HumanEval overfit **43.7% → 23.9% → 10.4%** at 1 → 3 → 8.1 asserts; MBPP 35.6% → 18.0% at 1 → 3 |
-| **5** | **Knowing where the bug is helps only when tests are thin.** Restricting the search to the faulty line (an oracle no real tool has) removes a quarter of MBPP's wrong patches, and nothing measurable on HumanEval with its full suite. | MBPP 18.0% → 13.7%, paired reduction **4.4 pp** [3.6, 5.3]; HumanEval (all) 0.3 pp [−0.3, +0.9] |
-| **6** | **Comparisons and negated conditions are where repair goes wrong;** operator swaps almost never. | MBPP overfit: `compare` 37.4%, `negate_if` 30.5%, `binop` 7.5%, `boolop` 9.9% |
+| **1** | **MBPP's three asserts: the returned patch is the known fix two times in three, and provably wrong in one task out of six.** | exact **67.1%** [64.8, 69.3] · no witness 15.6% · **overfit 17.3%** [15.6, 19.1] |
+| **2** | **Preferring the smallest plausible patch buys nothing - slightly less than nothing.** Returning *any* plausible patch at random overfits less often. With ties broken at random, "smallest" is 0.4 points worse (paired); with ties broken by site order, as the search does, 1.8 points worse. | MBPP overfit: any plausible 15.5% · smallest, random tie 15.9% (paired **+0.36 pp** [+0.13, +0.60]) · smallest, site order 17.3% (paired +1.82 pp [+1.02, +2.62]); HumanEval (all) site order +2.27 pp [+0.79, +3.78] |
+| **3** | **Because wrong patches are just as small.** 39% of MBPP tasks have a tie at the minimum size; in 27% a provably wrong patch is at least as small as the fix. Mean size of a wrong plausible patch: 1.16 tokens; of the fix: 1.06. | tie at smallest 39.2% · wrong patch ≤ fix 26.6% [24.2, 29.2] |
+| **4** | **What does work is more tests.** Same bugs, same search, only the number of visible asserts changes. | HumanEval overfit **42.1% → 21.7% → 8.1%** at 1 → 3 → 8.1 asserts; MBPP 34.9% → 17.3% at 1 → 3 |
+| **5** | **Knowing where the bug is helps only when tests are thin.** Restricting the search to the faulty line (an oracle no real tool has) removes a quarter of MBPP's wrong patches, and nothing measurable on HumanEval with its full suite. | MBPP 17.3% → 12.9%, paired reduction **4.4 pp** [3.6, 5.3]; HumanEval (all) 0.2 pp [−0.4, +0.8] |
+| **6** | **Comparisons and negated conditions are where repair goes wrong;** operator swaps almost never. | MBPP overfit: `compare` 35.5%, `negate_if` 29.0%, `const` 16.4%, `boolop` 9.9%, `binop` 7.5% |
 
 Long solutions contribute more mutants, so the table weights each task equally. Weighting
 each *problem* equally instead (`rate_per_problem` in the results) moves MBPP to 72.2% exact
-and 14.3% overfit; smallest-first still overfits more often than a random plausible patch
-(14.3% vs 11.5%).
+and 14.0% overfit; smallest-first still overfits more often than a random plausible patch
+(14.0% vs 11.3%).
 
 The hypothesis the repo was built around - "the smallest diff is the right one" - did not
 hold for search-based repair. Minimality is saturated: when every candidate is one token,
-it cannot rank them, and the ranking that remains (site order) is no better than chance.
+it cannot rank them, and the ranking that remains (site order) is slightly worse than chance.
 
 ### How strong is the oracle?
 
@@ -92,17 +92,20 @@ hidden challenge asserts, or an input on which the patch and the reference disag
 come in two sets, each run on the reference first and kept only if it returns a value,
 deterministically: *near* inputs (every EvalPlus input for HumanEval, thinned to 150; one-step
 perturbations of the asserts' own arguments) and *fuzz* inputs (up to 350 random,
-type-preserving mutations of the same arguments). After vetting, an MBPP problem has 292
-hidden inputs on average (52 near), a HumanEval problem 486 (211 near); 4 MBPP problems,
-whose functions take objects built in setup code, have none and rely on unseen asserts alone.
+type-preserving mutations of the same arguments). Arguments are evaluated in the program's
+own namespace, so an input may name a class the solution defines or an object its setup code
+built. An input is kept only if the reference answers it in under 0.05 s, so a patch that runs
+out its 1 s budget is at least 20 times slower - a hang, not a busy machine. After vetting, an
+MBPP problem has 292 hidden inputs on average (52 near), a HumanEval problem 484 (210 near);
+no problem has none.
 
-Of the 1,001 overfit patches MBPP returns with all three asserts shown, 852 were caught by a
-near input, **146 only by fuzzing**, 3 by a hidden assert. A tenfold input budget kept finding
-wrong programs, so the "no witness" bucket still contains some: **18.0% is a lower bound on
-MBPP's overfit rate and 18.0% + 14.8% = 32.9% an upper bound.** Some of the no-witness patches
-are genuinely correct, and they are interesting in their own right - 13.1% of the no-witness
-patches MBPP returns edit a line that was never broken and compensate for the bug instead
-(sample 5 below).
+Of the 961 overfit patches MBPP returns with all three asserts shown, 844 were caught by a
+near input, **107 only by fuzzing**, 7 by hanging on a hidden input and 3 by a hidden assert.
+Five times the input budget kept finding wrong programs, so the "no witness" bucket still
+contains some: **17.3% is a lower bound on MBPP's overfit rate and 17.3% + 15.6% = 32.9% an
+upper bound.** Some of the no-witness patches are genuinely correct, and they are interesting
+in their own right - 12.5% of the no-witness patches MBPP returns edit a line that was never
+broken and compensate for the bug instead (sample 5 below).
 
 ### Controls
 
@@ -303,7 +306,7 @@ git clone https://github.com/hammasbuilds/minimal-diff
 cd minimal-diff
 uv sync
 
-uv run pytest -q                       # 94 tests, no dataset, no model, ~40 s
+uv run pytest -q                       # 98 tests, no dataset, no model, ~40 s
 uv run python demo.py                  # the five repairs above, live
 uv run minimal-diff show mbpp/3/binop@17 --regime k1   # any task, any regime
 uv run minimal-diff report             # re-aggregate results/classical_*.jsonl.gz
@@ -352,7 +355,7 @@ Windows 11; the sandbox caps child memory with a Job Object there and `RLIMIT_AS
 ## Tests
 
 ```bash
-uv run pytest -q     # 94
+uv run pytest -q     # 98
 uv run ruff check src tests
 ```
 
@@ -401,9 +404,22 @@ reply that is not code.
 - **Two different candidates had the same name.** Every alternative at one site was labelled
   `compare@40`, so a by-name lookup returned five patches for one. Labels now carry the
   alternative (`compare@40:0:LtE`).
-- **Near inputs are not enough.** Fuzzing found 146 more wrong patches on MBPP that one-step
+- **Near inputs are not enough.** Fuzzing found 107 more wrong patches on MBPP that one-step
   perturbations had passed as unproven - reported, and the reason the headline overfit rate is
   called a lower bound.
+- **The oracle was calling `int`.** The entry point was read off the first call in the first
+  assert, as in mbpp-false-accepts; for `assert int(lobb_num(5, 3)) == 35` that is `int`, so
+  every hidden input of that problem was discarded. It is now the first called name the
+  solution defines. Hidden inputs were also evaluated in an empty namespace, which dropped
+  every input that builds a solution-defined object (`Pair(5, 24)`) or uses one built in
+  setup (`root`); four MBPP problems had no hidden inputs at all until both were fixed.
+- **Verdicts that depended on the machine's load.** Between two full runs, 39 MBPP verdicts
+  flipped in problems the code change between them did not touch. The culprits were
+  exponential references - binomial coefficients by plain
+  recursion, every permutation of a seven-letter string - whose hidden inputs took most of
+  the time budget, so a correct patch was "overfit by timeout" on one run and not the next.
+  Inputs are now kept only if the reference answers them in under 0.05 s, and a timeout is
+  reported as its own kind of witness (`hang`, 7 of 961).
 
 ## Keywords
 

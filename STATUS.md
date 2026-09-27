@@ -10,11 +10,11 @@ about repair itself - whether the smallest plausible patch is the correct one - 
 classical search measures that on 6,715 real tasks with controls and intervals:
 
 - MBPP (3 asserts): the smallest plausible patch is the known fix 67.1% [64.8, 69.3], provably
-  wrong 18.0% [16.2, 19.9], unproven 14.8%.
+  wrong 17.3% [15.6, 19.1], unproven 15.6%.
 - Preferring the smaller patch does not help: a random plausible patch overfits less
-  (paired difference smallest − random +1.92 pp [1.10, 2.74] on MBPP; +2.81 pp [1.28, 4.38] on
+  (paired difference smallest − random +1.82 pp [1.02, 2.62] on MBPP; +2.27 pp [0.79, 3.78] on
   HumanEval), because wrong patches are as small as right ones.
-- More visible tests are what help: HumanEval overfit 43.7% → 23.9% → 10.4% at 1 → 3 → 8.1
+- More visible tests are what help: HumanEval overfit 42.1% → 21.7% → 8.1% at 1 → 3 → 8.1
   asserts.
 
 The model arm adds a second question (do LLM patches change more than needed, and does a
@@ -24,10 +24,10 @@ The model arm adds a second question (do LLM patches change more than needed, an
 
 | Points | Criterion | Score | Reason |
 |---:|---|---:|---|
-| 15 | Works from a clean clone | 15 | Fresh `git clone` into a temp dir: `uv sync --offline`, `uv run pytest -q` (94 pass), `uv run python demo.py` (output identical to the committed run), `minimal-diff report` reproduces `results/classical_repair.json` byte for byte. Tests point `MINIMAL_DIFF_DATA`/`MINIMAL_DIFF_RESULTS` at empty dirs. |
+| 15 | Works from a clean clone | 15 | Fresh `git clone` into a temp dir: `uv sync --offline`, `uv run pytest -q` (98 pass), `uv run python demo.py` (output identical to the committed run), `minimal-diff report` reproduces `results/classical_repair.json` byte for byte. Tests point `MINIMAL_DIFF_DATA`/`MINIMAL_DIFF_RESULTS` at empty dirs. |
 | 20 | Real data, real result | 19 | 6,715 tasks from all 974 MBPP and 164 HumanEval problems (raw data committed), every task repaired, every number in `results/`. −1: the injected bugs are mutations, not real-world bugs. |
-| 15 | Finding quality | 14 | Baselines (random plausible, random tie-break), an oracle ablation (fault location), a dose-response over visible-test count, paired differences, cluster bootstrap over problems, per-problem weighting, per bug kind. Surprising numbers chased: a 0.0% exact rate for negated conditions was a no-op edit in the repair space (fixed, rerun). −1: the "no witness" bucket is wide (14.8% on MBPP), so overfitting is bracketed (18.0-32.9%) rather than pinned; fuzzing shows it still shrinks with more inputs. |
-| 15 | Correctness | 14 | 94 tests on behaviour and failure modes: sandbox (hang, swallowed interrupt, C-level sleep, crash, 8 GB allocation, forged output, state leaking between candidates), injection/repair premise per operator, Zhang-Shasha against textbook cases and its shortcut against the exact computation, oracle buckets with witnesses, selection policies, CLI end to end, model arm end to end with a fake. Isolation check: 790/790 sampled candidates agree between pooled and fresh interpreters. −1: no type checker run; one-edit AST distance uses a shortcut validated empirically rather than proved. |
+| 15 | Finding quality | 14 | Baselines (random plausible, random tie-break), an oracle ablation (fault location), a dose-response over visible-test count, paired differences, cluster bootstrap over problems, per-problem weighting, per bug kind. Surprising numbers chased: a 0.0% exact rate for negated conditions was a no-op edit in the repair space; 39 verdicts that flipped between runs were slow reference inputs timing out under load; four problems with no hidden inputs were an entry-point bug and an empty eval namespace (all fixed, full rerun each time). −1: the "no witness" bucket is wide (15.6% on MBPP), so overfitting is bracketed (17.3-32.9%) rather than pinned; fuzzing shows it still shrinks with more inputs. |
+| 15 | Correctness | 14 | 98 tests on behaviour and failure modes: sandbox (hang, swallowed interrupt, C-level sleep, crash, 8 GB allocation, forged output, state leaking between candidates), injection/repair premise per operator, Zhang-Shasha against textbook cases and its shortcut against the exact computation, oracle buckets with witnesses, selection policies, CLI end to end, model arm end to end with a fake. Isolation check: 790/790 sampled candidates agree between pooled and fresh interpreters. −1: no type checker run; one-edit AST distance uses a shortcut validated empirically rather than proved. |
 | 10 | Usability | 10 | `minimal-diff --help` and per-command help; `show <task> --regime` prints the bug, the tests, every plausible patch with its changed line and witness; missing data and unknown task ids give a message saying what to run or which ids exist; everything resumable. |
 | 10 | README | 10 | House format (h1 with stack, thesis, nav, badges, through-line mermaid + blockquote, findings table, 5 real Input/Output samples from `demo.py`, quick start, layout, requirements, tests, NOT-do, problems hit, keywords, licence), British spelling, inspiration credited. |
 | 10 | Code quality | 9 | Zero runtime dependencies, ruff clean (pinned 0.16.7), small modules, type hints throughout, no dead code found on a pass. −1: no mypy run. |
@@ -67,10 +67,11 @@ free VRAM ≥ 11 GB, and that Ollama serves `qwen2.5-coder:14b`, then runs:
 
 - Bugs are single-point mutations with the fix one edit away by construction; multi-edit
   repair and real bugs are not measured.
-- "No witness" is wide on negated conditions (47.8% of MBPP `negate_if` picks) - many are
+- "No witness" is wide on negated conditions (49.3% of MBPP `negate_if` picks) - many are
   genuinely equivalent (`not a not in b`), some are not, and the oracle cannot say which.
-- 4 MBPP problems have no usable hidden inputs (their functions take objects built in setup
-  code); their patches are judged by unseen asserts only.
+- Hidden inputs are vetted on the reference's speed (≤ 0.05 s), measured at build time, so a
+  rebuild on a differently loaded machine can keep or drop a borderline input. Re-running
+  `repair` on the committed task files is unaffected; only `build-tasks` is.
 - The results files are written with the tie-break by site order baked in; the random
   tie-break is an expectation computed from the same plausible set, not a separate run.
 
