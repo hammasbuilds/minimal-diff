@@ -109,3 +109,15 @@ def test_a_timeout_is_not_cached_as_a_load_failure():
     slow_import = "import time\nfor _ in range(10**9):\n    pass\ndef f(x):\n    return x + 1\n"
     rows = sandbox.run_asserts([slow_import], TESTS, stop_on_first_failure=False, item_timeout=0.3)
     assert statuses(rows) == [["timeout", "timeout"]]
+
+
+def test_worker_reuse_can_leak_state_which_is_why_isolation_is_measured():
+    """A candidate that monkeypatches a builtin changes the next one's result in a reused
+    worker. `minimal-diff check-isolation` exists to measure how often that happens on the
+    real tasks; this shows the check is looking for something real."""
+    poison = "import builtins\nbuiltins.abs = lambda x: 0\ndef f(x):\n    return x + 1\n"
+    victim = "def f(x):\n    return abs(x) + 1\n"
+    pooled = sandbox.run_asserts([poison, victim], ["assert f(-1) == 2"], fresh=True)
+    alone = sandbox.run_asserts([victim], ["assert f(-1) == 2"], fresh=True)
+    assert statuses(pooled)[1] == ["fail"]
+    assert statuses(alone) == [["pass"]]

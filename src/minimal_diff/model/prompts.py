@@ -67,12 +67,19 @@ class Prompt:
     user: str
 
 
+_STATUS_TEXT = {
+    "pass": "passes",
+    "fail": "FAILS (AssertionError)",
+    "error": "FAILS (raises an exception)",
+    "timeout": "FAILS (does not finish)",
+    "crash": "FAILS (the interpreter crashes)",
+}
+
+
 def _test_lines(task: Task, problem: ProblemRecord) -> str:
     out = []
     for status, test in zip(task.visible_status, problem.tests, strict=True):
-        verdict = {"pass": "passes", "fail": "FAILS (AssertionError)"}.get(
-            status, f"FAILS ({status})"
-        )
+        verdict = _STATUS_TEXT.get(status, f"FAILS ({status})")
         out.append(f"- `{test}`  -> {verdict}")
     return "\n".join(out)
 

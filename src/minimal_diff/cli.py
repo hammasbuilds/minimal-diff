@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
-from . import data, isolation, repair, stats, study, tasks
+from . import data, isolation, operators, repair, stats, study, tasks
 
 SOURCES = ("mbpp", "humaneval")
-RESULTS = data.ROOT / "results"
 
 
 def _sources(arg: str) -> tuple[str, ...]:
@@ -31,14 +31,14 @@ def cmd_build_tasks(a: argparse.Namespace) -> int:
         tasks.save(tasks.problems_path(source), recs, prov)
         tasks.save(tasks.tasks_path(source), ts, prov)
         print(f"  {st}")
-        summary = RESULTS / f"tasks_{source}.json"
+        summary = data.results_dir() / f"tasks_{source}.json"
         summary.parent.mkdir(parents=True, exist_ok=True)
         summary.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
     return 0
 
 
 def _rows_path(source: str) -> Path:
-    return RESULTS / f"classical_{source}.jsonl.gz"
+    return data.results_dir() / f"classical_{source}.jsonl.gz"
 
 
 def cmd_repair(a: argparse.Namespace) -> int:
@@ -48,7 +48,7 @@ def cmd_repair(a: argparse.Namespace) -> int:
         if a.limit:
             ts = ts[: a.limit]
         out = _rows_path(source)
-        print(f"{source}: {len(ts)} tasks -> {out.relative_to(data.ROOT)}")
+        print(f"{source}: {len(ts)} tasks -> {out}")
         n = study.run(ts, probs, out, workers=a.workers)
         print(f"  {n} newly repaired")
     return 0
@@ -61,14 +61,14 @@ def cmd_check_isolation(a: argparse.Namespace) -> int:
         ts += tasks.load_tasks(source)
         probs.update(tasks.load_problems(source))
     res = isolation.check(ts, probs, n_tasks=a.tasks, per_task=a.per_task, workers=a.workers)
-    out = RESULTS / "isolation_check.json"
+    out = data.results_dir() / "isolation_check.json"
     out.write_text(json.dumps(res, indent=2) + "\n", encoding="utf-8")
     print(
         f"{res['candidates']} candidates from {res['tasks']} tasks re-run in a fresh interpreter: "
         f"{res['agree']} agree, {res['disagree']} disagree "
         f"({res['disagree_involving_timeout']} of those involve a timeout)"
     )
-    print(f"wrote {out.relative_to(data.ROOT)}")
+    print(f"wrote {out}")
     return 0 if res["disagree"] == res["disagree_involving_timeout"] else 1
 
 
@@ -89,7 +89,7 @@ def cmd_report(a: argparse.Namespace) -> int:
         print("no results yet: run `minimal-diff repair` first", file=sys.stderr)
         return 1
     summary = study.summarise(rows)
-    out = RESULTS / "classical_repair.json"
+    out = data.results_dir() / "classical_repair.json"
     out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     for source, s in summary.items():
         print(
@@ -103,7 +103,7 @@ def cmd_report(a: argparse.Namespace) -> int:
         for g, r in s["regimes"].items():
             cells = "".join(f"{stats.fmt(r[k]):<22}" for _, k in REPORT_COLUMNS)
             print(f"   {g:<6}{r['mean_visible_tests']:>6}{r['mean_plausible']:>8}  {cells}")
-    print(f"\nwrote {out.relative_to(data.ROOT)}")
+    print(f"\nwrote {out}")
     return 0
 
 
@@ -140,17 +140,23 @@ def render_row(task: tasks.Task, prob: tasks.ProblemRecord, row: dict, regime: s
         "",
         f"{row['n_candidates']} one-edit candidates, {s['n_plausible']} pass every shown assert:",
     ]
+    edits = operators.neighbours(task.buggy)
+    buggy_lines = task.buggy.splitlines()
     for c in row["plausible_k1"]:
         if not all(c["passes"][i] for i in subset):
             continue
         z = c["size"]
         mark = "<- the known fix" if c["is_truth"] else ""
         lines.append(
-            f"  {c['where']:<16} tokens={z['tokens']} ast={z['ast_nodes']} "
+            f"  {c['where']:<18} tokens={z['tokens']} ast={z['ast_nodes']} "
             f"at_fault={'yes' if z['touches_fault'] else 'no ':<3}  {c['verdict']:<10} {mark}"
         )
+        new_lines = edits[c["index"]].code.splitlines()
+        for old, new in zip(buggy_lines, new_lines, strict=True):
+            if old != new:
+                lines += [f"      - {old.strip()}", f"      + {new.strip()}"]
         if c["witness"]:
-            lines.append(f"      witness: {c['witness']}")
+            lines.append(f"      witness: {_explain(c['witness'], prob)}")
     pick = s["smallest"]
     lines.append("")
     if pick is None:
@@ -158,6 +164,15 @@ def render_row(task: tasks.Task, prob: tasks.ProblemRecord, row: dict, regime: s
     else:
         lines.append(f"smallest-first repair returns {pick['where']}: {pick['verdict'].upper()}")
     return "\n".join(lines)
+
+
+def _explain(witness: str, prob: tasks.ProblemRecord) -> str:
+    """Name the assert behind "visible assert 2 -> fail" rather than its index."""
+    m = re.fullmatch(r"(visible|hidden) assert (\d+) -> (\w+)", witness)
+    if not m:
+        return witness
+    pool = prob.tests if m.group(1) == "visible" else prob.hidden_tests
+    return f"{m.group(3)}s `{pool[int(m.group(2))].strip()}`"
 
 
 def _indent(code: str) -> str:

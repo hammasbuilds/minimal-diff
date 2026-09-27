@@ -40,5 +40,6 @@ def clamp_problem() -> data.Problem:
 
 @pytest.fixture(autouse=True)
 def _no_real_data(tmp_path_factory, monkeypatch):
-    """Point the data directory at an empty folder so no test can read the real datasets."""
+    """Point data and results at empty folders: no test can read or overwrite the real ones."""
     monkeypatch.setenv("MINIMAL_DIFF_DATA", str(tmp_path_factory.mktemp("empty-data")))
+    monkeypatch.setenv("MINIMAL_DIFF_RESULTS", str(tmp_path_factory.mktemp("empty-results")))

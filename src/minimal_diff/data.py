@@ -32,6 +32,12 @@ def data_dir() -> Path:
     return Path(env) if env else ROOT / "data"
 
 
+def results_dir() -> Path:
+    """Where results are read and written; `MINIMAL_DIFF_RESULTS` overrides `results/`."""
+    env = os.environ.get("MINIMAL_DIFF_RESULTS")
+    return Path(env) if env else ROOT / "results"
+
+
 @dataclass(frozen=True)
 class Problem:
     """One benchmark problem: a reference, its visible asserts, and extra inputs."""

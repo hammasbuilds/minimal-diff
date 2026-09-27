@@ -10,8 +10,7 @@ from .. import data, study, tasks
 from . import arm, prompts
 from .client import DEFAULT_MODEL, DEFAULT_URL, CachedClient, ModelUnavailable, OllamaClient
 
-RESULTS = data.ROOT / "results"
-CACHE = RESULTS / "model_cache"
+
 # Measured nowhere yet - this is only for the dry run's time estimate, and it says so.
 ASSUMED_SECONDS_PER_CALL = 12.0
 
@@ -32,7 +31,7 @@ def _jobs(a: argparse.Namespace) -> list[arm.Job]:
 
 def cmd_plan(a: argparse.Namespace) -> int:
     jobs = _jobs(a)
-    client = CachedClient(OllamaClient(a.model, a.url), CACHE)
+    client = CachedClient(OllamaClient(a.model, a.url), data.results_dir() / "model_cache")
     todo = [j for j in jobs if not client.cached(j.prompt.system, j.prompt.user)]
     by = {}
     for j in jobs:
@@ -54,9 +53,9 @@ def cmd_plan(a: argparse.Namespace) -> int:
 
 def cmd_run(a: argparse.Namespace) -> int:
     jobs = _jobs(a)
-    client = CachedClient(OllamaClient(a.model, a.url), CACHE)
-    out = RESULTS / f"model_{_safe(a.model)}.jsonl"
-    print(f"{len(jobs)} jobs -> {out.relative_to(data.ROOT)}")
+    client = CachedClient(OllamaClient(a.model, a.url), data.results_dir() / "model_cache")
+    out = data.results_dir() / f"model_{_safe(a.model)}.jsonl"
+    print(f"{len(jobs)} jobs -> {out}")
     try:
         n = arm.run(jobs, client, out)
     except ModelUnavailable as e:
@@ -70,7 +69,7 @@ def cmd_run(a: argparse.Namespace) -> int:
 
 
 def cmd_report(a: argparse.Namespace) -> int:
-    path = RESULTS / f"model_{_safe(a.model)}.jsonl"
+    path = data.results_dir() / f"model_{_safe(a.model)}.jsonl"
     if not path.exists():
         print(f"no {path.name}: run `minimal-diff model run` first", file=sys.stderr)
         return 1
@@ -78,11 +77,11 @@ def cmd_report(a: argparse.Namespace) -> int:
     classical = {
         r["id"]: r
         for source in ("mbpp", "humaneval")
-        for r in study.read_rows(RESULTS / f"classical_{source}.jsonl.gz")
+        for r in study.read_rows(data.results_dir() / f"classical_{source}.jsonl.gz")
     }
     summary = arm.summarise(rows, classical)
     summary["model"] = a.model
-    out = RESULTS / f"model_arm_{_safe(a.model)}.json"
+    out = data.results_dir() / f"model_arm_{_safe(a.model)}.json"
     out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     from ..stats import fmt
 
@@ -94,7 +93,7 @@ def cmd_report(a: argparse.Namespace) -> int:
             f"{fmt(s['overfit']):<22}{s['mean_tokens_changed'] or 0:>7}"
             f"{fmt(s['unrelated_edit_rate']):>24}"
         )
-    print(f"wrote {out.relative_to(data.ROOT)}")
+    print(f"wrote {out}")
     return 0
 
 
