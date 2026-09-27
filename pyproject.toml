@@ -1,0 +1,40 @@
+[project]
+name = "minimal-diff"
+version = "0.1.0"
+description = "Program repair measured on fix size as well as fix correctness: is the smallest patch that passes the tests the right one?"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["program-repair", "apr", "patch-overfitting", "mbpp", "humaneval", "mutation-testing", "code-llm"]
+# No dependencies. Mutation and repair are stdlib `ast`, execution is stdlib
+# `subprocess`, the tree edit distance is written out here, and the model arm talks to
+# Ollama over plain HTTP with `urllib`.
+dependencies = []
+
+[project.scripts]
+minimal-diff = "minimal_diff.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff==0.16.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minimal_diff"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures are programs written as string literals; wrapping them hurts reading.
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

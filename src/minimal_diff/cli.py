@@ -1,0 +1,227 @@
+"""`minimal-diff`: build repair tasks, run the classical search, report, queue the model arm."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from . import data, isolation, repair, stats, study, tasks
+
+SOURCES = ("mbpp", "humaneval")
+RESULTS = data.ROOT / "results"
+
+
+def _sources(arg: str) -> tuple[str, ...]:
+    return SOURCES if arg == "both" else (arg,)
+
+
+def cmd_build_tasks(a: argparse.Namespace) -> int:
+    for source in _sources(a.source):
+        probs = data.load(source, a.limit)
+        print(f"{source}: {len(probs)} problems -> building tasks (runs every mutant) ...")
+        recs, ts, st = tasks.build(probs, workers=a.workers, progress=True)
+        prov = {
+            "source": source,
+            "built_by": "minimal-diff build-tasks",
+            "limit": a.limit,
+            "stats": st.__dict__,
+        }
+        tasks.save(tasks.problems_path(source), recs, prov)
+        tasks.save(tasks.tasks_path(source), ts, prov)
+        print(f"  {st}")
+        summary = RESULTS / f"tasks_{source}.json"
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+    return 0
+
+
+def _rows_path(source: str) -> Path:
+    return RESULTS / f"classical_{source}.jsonl.gz"
+
+
+def cmd_repair(a: argparse.Namespace) -> int:
+    for source in _sources(a.source):
+        probs = tasks.load_problems(source)
+        ts = tasks.load_tasks(source)
+        if a.limit:
+            ts = ts[: a.limit]
+        out = _rows_path(source)
+        print(f"{source}: {len(ts)} tasks -> {out.relative_to(data.ROOT)}")
+        n = study.run(ts, probs, out, workers=a.workers)
+        print(f"  {n} newly repaired")
+    return 0
+
+
+def cmd_check_isolation(a: argparse.Namespace) -> int:
+    ts: list[tasks.Task] = []
+    probs: dict[str, tasks.ProblemRecord] = {}
+    for source in SOURCES:
+        ts += tasks.load_tasks(source)
+        probs.update(tasks.load_problems(source))
+    res = isolation.check(ts, probs, n_tasks=a.tasks, per_task=a.per_task, workers=a.workers)
+    out = RESULTS / "isolation_check.json"
+    out.write_text(json.dumps(res, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"{res['candidates']} candidates from {res['tasks']} tasks re-run in a fresh interpreter: "
+        f"{res['agree']} agree, {res['disagree']} disagree "
+        f"({res['disagree_involving_timeout']} of those involve a timeout)"
+    )
+    print(f"wrote {out.relative_to(data.ROOT)}")
+    return 0 if res["disagree"] == res["disagree_involving_timeout"] else 1
+
+
+REPORT_COLUMNS = (
+    ("smallest exact", "smallest_exact"),
+    ("smallest OVERFIT", "smallest_overfit"),
+    ("smallest, random tie", "tied_overfit"),
+    ("any plausible", "random_overfit"),
+    ("at-fault oracle", "at_fault_overfit"),
+)
+
+
+def cmd_report(a: argparse.Namespace) -> int:
+    rows = []
+    for source in SOURCES:
+        rows += study.read_rows(_rows_path(source))
+    if not rows:
+        print("no results yet: run `minimal-diff repair` first", file=sys.stderr)
+        return 1
+    summary = study.summarise(rows)
+    out = RESULTS / "classical_repair.json"
+    out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    for source, s in summary.items():
+        print(
+            f"\n== {source}: {s['tasks']} tasks over {s['problems']} problems, "
+            f"{s['mean_candidates']} one-edit candidates per task"
+        )
+        print(f"   known fix inside the search space: {stats.fmt(s['truth_in_space'])}")
+        print("   rates of the returned patch, 95% cluster-bootstrap CI; overfit unless noted")
+        head = "".join(f"{h:<22}" for h, _ in REPORT_COLUMNS)
+        print(f"   {'shown':<6}{'tests':>6}{'plaus.':>8}  {head}")
+        for g, r in s["regimes"].items():
+            cells = "".join(f"{stats.fmt(r[k]):<22}" for _, k in REPORT_COLUMNS)
+            print(f"   {g:<6}{r['mean_visible_tests']:>6}{r['mean_plausible']:>8}  {cells}")
+    print(f"\nwrote {out.relative_to(data.ROOT)}")
+    return 0
+
+
+def cmd_show(a: argparse.Namespace) -> int:
+    source = a.task_id.split("/", 1)[0]
+    if source not in SOURCES:
+        print(f"task ids look like mbpp/3/binop@17; got {a.task_id!r}", file=sys.stderr)
+        return 2
+    ts = {t.id: t for t in tasks.load_tasks(source)}
+    if a.task_id not in ts:
+        near = [i for i in ts if i.startswith(a.task_id.rsplit("/", 1)[0] + "/")][:8]
+        print(
+            f"no task {a.task_id!r}. Tasks for that problem: {', '.join(near) or 'none'}",
+            file=sys.stderr,
+        )
+        return 2
+    task = ts[a.task_id]
+    prob = tasks.load_problems(source)[task.problem]
+    row = repair.repair_task(task, prob)
+    print(render_row(task, prob, row, a.regime))
+    return 0
+
+
+def render_row(task: tasks.Task, prob: tasks.ProblemRecord, row: dict, regime: str = "all") -> str:
+    """A human-readable account of one repair: the bug, the tests, every plausible patch."""
+    lines = [f"task {task.id}  (injected: {task.kind}, faulty line {task.fault_lines})", ""]
+    lines += ["buggy program:", _indent(task.buggy), ""]
+    subset = row["subset_indices"][regime]
+    lines.append(f"visible asserts shown to the repairer ({regime}):")
+    for i in subset:
+        lines.append(f"  [{task.visible_status[i]:>7}] {prob.tests[i]}")
+    s = row["subsets"][regime]
+    lines += [
+        "",
+        f"{row['n_candidates']} one-edit candidates, {s['n_plausible']} pass every shown assert:",
+    ]
+    for c in row["plausible_k1"]:
+        if not all(c["passes"][i] for i in subset):
+            continue
+        z = c["size"]
+        mark = "<- the known fix" if c["is_truth"] else ""
+        lines.append(
+            f"  {c['where']:<16} tokens={z['tokens']} ast={z['ast_nodes']} "
+            f"at_fault={'yes' if z['touches_fault'] else 'no ':<3}  {c['verdict']:<10} {mark}"
+        )
+        if c["witness"]:
+            lines.append(f"      witness: {c['witness']}")
+    pick = s["smallest"]
+    lines.append("")
+    if pick is None:
+        lines.append("smallest-first repair: no plausible patch")
+    else:
+        lines.append(f"smallest-first repair returns {pick['where']}: {pick['verdict'].upper()}")
+    return "\n".join(lines)
+
+
+def _indent(code: str) -> str:
+    return "\n".join(f"    {ln}" for ln in code.splitlines())
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="minimal-diff",
+        description=(
+            "Program repair measured on fix size and fix correctness. Injects single-point "
+            "bugs into MBPP/HumanEval references, repairs them, and checks every plausible "
+            "patch against the reference on hidden inputs."
+        ),
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    b = sub.add_parser("build-tasks", help="inject bugs and build data/tasks_*.jsonl.gz")
+    b.add_argument("--source", choices=(*SOURCES, "both"), default="both")
+    b.add_argument("--limit", type=int, default=None, help="first N problems only")
+    b.add_argument("--workers", type=int, default=8)
+    b.set_defaults(func=cmd_build_tasks)
+
+    r = sub.add_parser("repair", help="run the classical search on every task (resumable)")
+    r.add_argument("--source", choices=(*SOURCES, "both"), default="both")
+    r.add_argument("--limit", type=int, default=None, help="first N tasks only")
+    r.add_argument("--workers", type=int, default=8)
+    r.set_defaults(func=cmd_repair)
+
+    rep = sub.add_parser("report", help="aggregate results into results/classical_repair.json")
+    rep.set_defaults(func=cmd_report)
+
+    s = sub.add_parser("show", help="repair one task and print every plausible patch")
+    s.add_argument("task_id", help="e.g. mbpp/3/binop@17")
+    s.add_argument(
+        "--regime",
+        choices=study.REGIMES,
+        default="all",
+        help="how many visible asserts the repairer sees (default: all)",
+    )
+    s.set_defaults(func=cmd_show)
+
+    c = sub.add_parser(
+        "check-isolation", help="re-run sampled candidates in fresh interpreters and compare"
+    )
+    c.add_argument("--tasks", type=int, default=200)
+    c.add_argument("--per-task", type=int, default=4)
+    c.add_argument("--workers", type=int, default=8)
+    c.set_defaults(func=cmd_check_isolation)
+
+    from .model import cli as model_cli
+
+    model_cli.add_parser(sub)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
