@@ -94,3 +94,67 @@ def test_double_negation_is_never_a_candidate():
 def test_repair_labels_are_unique_per_candidate():
     ns = operators.neighbours(operators.normalise(PROGRAMS[1]))
     assert len({e.where for e in ns}) == len(ns)
+
+
+def test_in_place_enumeration_matches_the_deep_copy_version():
+    """The old implementation deep-copied the tree per edit; the new one mutates and undoes.
+    Same programs, same labels, same order."""
+    import copy
+
+    def old_neighbours(code):
+        tree = ast.parse(code)
+        seen, out = {ast.unparse(tree)}, []
+        for idx, node in enumerate(operators.preorder(tree)):
+            for kind, detail, change in operators._repair_changes(node):
+                t = copy.deepcopy(tree)
+                change(operators.preorder(t)[idx])
+                src = ast.unparse(ast.fix_missing_locations(t))
+                if src not in seen:
+                    seen.add(src)
+                    out.append((src, f"{kind}@{idx}" + (f":{detail}" if detail else "")))
+        return out
+
+    for program in PROGRAMS:
+        code = operators.normalise(program)
+        assert [(e.code, e.where) for e in operators.neighbours(code)] == old_neighbours(code)
+
+
+def test_spliced_edits_keep_comments_and_formatting():
+    code = "def f(x):  # keep me\n    y = x*2   # and me\n    return (y  <  3)\n"
+    es = operators.neighbours(code, splice=True)
+    assert es and all("# keep me" in e.code and "# and me" in e.code for e in es)
+    lt = next(e for e in es if e.where.endswith(":LtE"))
+    assert lt.code == code.replace("y  <  3", "y <= 3")
+    assert all(operators.parse(e.code) is not None for e in es)
+
+
+def test_splicing_adds_brackets_only_where_precedence_needs_them():
+    code = "def f(a, b, c):\n    return a + b * c\n"
+    es = {e.where: e.code for e in operators.neighbours(code, splice=True)}
+    inner_add = next(v for k, v in es.items() if k.startswith("binop@") and "a + (b + c)" in v)
+    assert ast.dump(ast.parse(inner_add)) == ast.dump(ast.parse(code.replace("b * c", "(b + c)")))
+    outer = next(v for k, v in es.items() if k.endswith(":Mult") and "a * " in v)
+    assert "(" not in outer.split("return")[1].split("*")[0]  # `a * b * c`-style needs none
+
+
+def test_edits_inside_f_strings_splice_or_are_dropped_never_break_the_program():
+    code = "def f(x):\n    return f'{x - 1}' + f\"{x + 2}\"\n"
+    es = operators.neighbours(code, splice=True)
+    assert es and all(operators.parse(e.code) is not None for e in es)
+
+
+def test_enumeration_scales_linearly():
+    import time
+
+    unit = "".join(
+        f"def f{i}(x):\n    if x < {i}:\n        return x + {i} * 2\n    return x - 1\n"
+        for i in range(50)
+    )
+    t = time.perf_counter()
+    small = len(operators.neighbours(unit, splice=True))
+    t_small = time.perf_counter() - t
+    t = time.perf_counter()
+    big = len(operators.neighbours(unit * 8, splice=True))
+    t_big = time.perf_counter() - t
+    assert big == 8 * small
+    assert t_big < 8 * max(t_small, 0.01) * 3  # linear with generous slack, not 64x

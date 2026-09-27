@@ -13,14 +13,13 @@ true fix is always one edit away. That is deliberate: the question this repo ask
 whether the fix is reachable, it is whether the tests pick it out from the other
 one-edit programs that also pass them.
 
-Sites are addressed by position in a fixed pre-order walk, so the same index names the
-same node in a deep copy of the tree.
+Sites are addressed by position in a fixed pre-order walk. Each edit is applied to the
+one parsed tree in place and undone, not to a deep copy.
 """
 
 from __future__ import annotations
 
 import ast
-import copy
 import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -69,11 +68,25 @@ ARITH_FAMILIES = (
 
 @dataclass(frozen=True)
 class Edit:
-    """One single-point edit and the program it produces."""
+    """One single-point edit and the program it produces.
 
-    code: str
+    A spliced edit keeps only the span it rewrites and builds the program on demand, so
+    enumerating tens of thousands of edits of a large file does not hold tens of thousands
+    of copies of it.
+    """
+
     kind: str  # compare | binop | boolop | const | negate_if (+ repair-only kinds)
     where: str  # "<kind>@<site index>", plus ":<which alternative>" for repair edits
+    text: str | None = None  # the whole program, when it was produced by unparsing
+    base: str | None = None  # the original program, for a spliced edit
+    span: tuple[int, int, str] | None = None  # (start, end, replacement) into `base`
+
+    @property
+    def code(self) -> str:
+        if self.text is not None:
+            return self.text
+        a, b, rep = self.span  # type: ignore[misc]
+        return self.base[:a] + rep + self.base[b:]  # type: ignore[index]
 
 
 def parse(code: str) -> ast.Module | None:
@@ -105,16 +118,6 @@ def preorder(tree: ast.AST) -> list[ast.AST]:
     return out
 
 
-def _apply(tree: ast.Module, index: int, change: Callable[[ast.AST], None]) -> str | None:
-    t = copy.deepcopy(tree)
-    change(preorder(t)[index])
-    try:
-        ast.fix_missing_locations(t)
-        return ast.unparse(t)
-    except (ValueError, AttributeError, RecursionError):
-        return None
-
-
 def _is_int(node: ast.AST) -> bool:
     return (
         isinstance(node, ast.Constant)
@@ -123,32 +126,48 @@ def _is_int(node: ast.AST) -> bool:
     )
 
 
-def _set_op(attr: str, op: type, pos: int | None = None) -> Callable[[ast.AST], None]:
-    def change(n: ast.AST) -> None:
+# A change mutates one node in place and returns (undo, the node whose source text it
+# replaces, the node that replaces it). Mutating in place and undoing, rather than deep-copying
+# the whole tree per edit, is what keeps enumeration from being quadratic in program size.
+Change = Callable[[ast.AST], tuple[Callable[[], None], ast.AST, ast.AST]]
+
+
+def _set_op(attr: str, op: type, pos: int | None = None) -> Change:
+    def change(n: ast.AST):
         if pos is None:
+            old = getattr(n, attr)
             setattr(n, attr, op())
-        else:
-            getattr(n, attr)[pos] = op()
+            return (lambda: setattr(n, attr, old)), n, n
+        ops = getattr(n, attr)
+        old = ops[pos]
+        ops[pos] = op()
+        return (lambda: ops.__setitem__(pos, old)), n, n
 
     return change
 
 
-def _bump(delta: int) -> Callable[[ast.AST], None]:
-    def change(n: ast.AST) -> None:
-        n.value = n.value + delta  # type: ignore[attr-defined]
+def _bump(delta: int) -> Change:
+    def change(n: ast.AST):
+        old = n.value  # type: ignore[attr-defined]
+        n.value = old + delta  # type: ignore[attr-defined]
+        return (lambda: setattr(n, "value", old)), n, n
 
     return change
 
 
-def _negate(n: ast.AST) -> None:
-    n.test = ast.UnaryOp(op=ast.Not(), operand=n.test)  # type: ignore[attr-defined]
+def _negate(n: ast.AST):
+    old = n.test  # type: ignore[attr-defined]
+    n.test = ast.UnaryOp(op=ast.Not(), operand=old)  # type: ignore[attr-defined]
+    return (lambda: setattr(n, "test", old)), old, n.test  # type: ignore[attr-defined]
 
 
-def _unnegate(n: ast.AST) -> None:
-    n.test = n.test.operand  # type: ignore[attr-defined]
+def _unnegate(n: ast.AST):
+    old = n.test  # type: ignore[attr-defined]
+    n.test = old.operand  # type: ignore[attr-defined]
+    return (lambda: setattr(n, "test", old)), old, n.test  # type: ignore[attr-defined]
 
 
-def _injection_changes(n: ast.AST) -> Iterator[tuple[str, str, Callable[[ast.AST], None]]]:
+def _injection_changes(n: ast.AST) -> Iterator[tuple[str, str, Change]]:
     """The one mutation mbpp-false-accepts applies at this node, if any."""
     if isinstance(n, ast.Compare) and n.ops and type(n.ops[0]) in CMP_SWAP:
         yield "compare", "", _set_op("ops", CMP_SWAP[type(n.ops[0])], 0)
@@ -166,7 +185,7 @@ def _family(op: type, families: tuple[tuple[type, ...], ...]) -> tuple[type, ...
     return next((f for f in families if op in f), ())
 
 
-def _repair_changes(n: ast.AST) -> Iterator[tuple[str, str, Callable[[ast.AST], None]]]:
+def _repair_changes(n: ast.AST) -> Iterator[tuple[str, str, Change]]:
     """Every neighbouring edit at this node."""
     if isinstance(n, ast.Compare):
         for pos, op in enumerate(n.ops):
@@ -193,23 +212,130 @@ def _repair_changes(n: ast.AST) -> Iterator[tuple[str, str, Callable[[ast.AST], 
             yield "negate_if", "", _negate
 
 
-def _edits(code: str, changes, limit: int | None = None) -> list[Edit]:
+def _unparse(tree: ast.AST) -> str | None:
+    try:
+        ast.fix_missing_locations(tree)
+        return ast.unparse(tree)
+    except (ValueError, AttributeError, RecursionError):
+        return None
+
+
+class _Source:
+    """Splices one node's new text into the original source, keeping every other character.
+
+    AST positions are UTF-8 byte columns; offsets here are characters.
+    """
+
+    def __init__(self, code: str):
+        self.code = code
+        self.lines = code.splitlines(keepends=True)
+        self.starts = [0]
+        for ln in self.lines:
+            self.starts.append(self.starts[-1] + len(ln))
+
+    def _offset(self, line: int, col_bytes: int) -> int:
+        text = self.lines[line - 1]
+        return self.starts[line - 1] + len(text.encode("utf-8")[:col_bytes].decode("utf-8"))
+
+    def _span(self, n: ast.AST) -> tuple[int, int]:
+        return (
+            self._offset(n.lineno, n.col_offset),  # type: ignore[attr-defined]
+            self._offset(n.end_lineno, n.end_col_offset),  # type: ignore[attr-defined]
+        )
+
+    def splice(
+        self,
+        old: ast.AST,
+        new: ast.AST,
+        parent: ast.AST | None,
+        tree: ast.Module,
+        fstring: ast.AST | None = None,
+    ) -> tuple[int, int, str] | str | None:
+        """(start, end, replacement), or the whole unparsed program as a fallback."""
+        try:
+            a, b = self._span(old)
+            fa, fb = self._span(fstring) if fstring is not None else (a, b)
+        except (AttributeError, IndexError, TypeError):
+            return _unparse(tree)
+        rep = _unparse(new)
+        if rep is None:
+            return None
+        # Parenthesise only where the edited parent, unparsed, needs it and the source does
+        # not already have the brackets.
+        if isinstance(parent, ast.expr):
+            whole = _unparse(parent) or ""
+            bracketed = self.code[a - 1 : a] == "(" and self.code[b : b + 1] == ")"
+            if f"({rep})" in whole and not bracketed:
+                rep = f"({rep})"
+        # No re-parse of the whole file per edit (that made enumeration quadratic): the
+        # replacement is `ast.unparse` output, parenthesised as its parent needs, so it is
+        # valid wherever the old node was. Inside an f-string its quotes may clash, so only
+        # that f-string is re-parsed, and an edit that does not fit is dropped.
+        if fstring is not None:
+            segment = self.code[fa:a] + rep + self.code[b:fb]
+            if parse(f"({segment})") is None:
+                return None
+        return (a, b, rep)
+
+
+def _edits(
+    code: str,
+    changes,
+    limit: int | None = None,
+    splice: bool = False,
+    progress: Callable[[int, int], None] | None = None,
+) -> list[Edit]:
+    """Every edit `changes` offers, deduplicated, in site order.
+
+    `splice=False` returns each edited program in `ast.unparse` form - what the study
+    compares against normalised references. `splice=True` rewrites only the edited node's
+    span in `code` and keeps everything else, comments and formatting included: what a
+    person repairing their own file needs. `progress(done, total)` is called every 500
+    nodes.
+    """
     tree = parse(code)
     if tree is None:
         return []
-    seen = {ast.unparse(tree)}
+    nodes = preorder(tree)
+    parents = {id(c): n for n in nodes for c in ast.iter_child_nodes(n)}
+    src = _Source(code) if splice else None
+    # Every node inside an f-string, mapped to the outermost f-string holding it.
+    fstring: dict[int, ast.AST] = {}
+    for n in nodes:
+        if isinstance(n, ast.JoinedStr) and id(n) not in fstring:
+            for c in ast.walk(n):
+                fstring[id(c)] = n
+    seen: set = {code if splice else ast.unparse(tree)}
     out: list[Edit] = []
-    for idx, node in enumerate(preorder(tree)):
+    for idx, node in enumerate(nodes):
+        if progress is not None and idx % 500 == 0:
+            progress(idx, len(nodes))
         for kind, detail, change in changes(node):
-            src = _apply(tree, idx, change)
-            if src is None:
+            undo, old, new = change(node)
+            try:
+                if src is not None:
+                    text = src.splice(old, new, parents.get(id(old)), tree, fstring.get(id(old)))
+                else:
+                    text = _unparse(tree)
+            finally:
+                undo()
+            if text is None:
                 continue
-            # An edit that unparses to something already produced changed nothing new.
-            if src in seen:
+            if (
+                isinstance(text, tuple)
+                and src is not None
+                and src.code[text[0] : text[1]] == text[2]
+            ):
+                continue  # rewrote a span to what it already was
+            # An edit that produces something already produced changed nothing new.
+            if text in seen:
                 continue
-            seen.add(src)
+            seen.add(text)
             where = f"{kind}@{idx}" + (f":{detail}" if detail else "")
-            out.append(Edit(src, kind, where))
+            if isinstance(text, tuple):
+                out.append(Edit(kind, where, base=code, span=text))
+            else:
+                out.append(Edit(kind, where, text=text))
             if limit and len(out) >= limit:
                 return out
     return out
@@ -220,6 +346,11 @@ def inject(code: str) -> list[Edit]:
     return _edits(code, _injection_changes)
 
 
-def neighbours(code: str, limit: int | None = None) -> list[Edit]:
-    """Every single-point repair candidate for `code`, in site order."""
-    return _edits(code, _repair_changes, limit)
+def neighbours(
+    code: str,
+    limit: int | None = None,
+    splice: bool = False,
+    progress: Callable[[int, int], None] | None = None,
+) -> list[Edit]:
+    """Every single-point repair candidate for `code`, in site order (see `_edits`)."""
+    return _edits(code, _repair_changes, limit, splice, progress)
