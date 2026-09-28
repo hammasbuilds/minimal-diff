@@ -15,6 +15,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .. import diffmetrics, operators, oracle, sandbox, stats
 from ..tasks import ProblemRecord, Task
@@ -174,7 +175,7 @@ def summarise(rows: list[dict], classical: dict[str, dict] | None = None) -> dic
         rs = [r for r in every if r["verdict"] != "truncated"]
         plaus = [r for r in rs if r.get("plausible")]
         sized = [r for r in rs if r.get("parsed")]
-        s = {
+        s: dict[str, Any] = {
             "n": len(rs),
             "n_truncated": len(every) - len(rs),
             "truncated": stats.cluster_rate(every, lambda r: float(r["verdict"] == "truncated")),

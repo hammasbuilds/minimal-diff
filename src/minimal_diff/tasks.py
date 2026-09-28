@@ -23,6 +23,7 @@ from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from . import data, diffmetrics, inputs, operators, sandbox
 
@@ -123,7 +124,7 @@ def _own_args(test: str, fn: str) -> str | None:
 def build_problem(p: data.Problem) -> tuple[ProblemRecord | None, list[Task], dict]:
     """One problem's record and tasks, plus counters for the build summary."""
     ref = operators.normalise(p.reference)
-    counts = {"mutants": 0, "survived": 0, "reason": ""}
+    counts: dict[str, Any] = {"mutants": 0, "survived": 0, "reason": ""}
     if operators.parse(ref) is None:
         counts["reason"] = "reference_fails"
         return None, [], counts

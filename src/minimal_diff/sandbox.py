@@ -156,10 +156,11 @@ def _cap_windows(proc: subprocess.Popen, limit_mb: int) -> bool:  # pragma: no c
 
 def _posix_limit(limit_mb: int):  # pragma: no cover - platform specific
     def apply() -> None:
-        import resource
+        if sys.platform != "win32":  # Windows uses a Job Object instead
+            import resource
 
-        b = limit_mb * 1024 * 1024
-        resource.setrlimit(resource.RLIMIT_AS, (b, b))
+            b = limit_mb * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_AS, (b, b))
 
     return apply
 

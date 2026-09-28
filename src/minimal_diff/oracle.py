@@ -81,6 +81,7 @@ def _judge(
     if not todo:
         return out  # type: ignore[return-value]
 
+    rows: Sequence[Sequence[sandbox.Result]]
     if visible_rows is None:
         rows = sandbox.run_asserts(
             [patches[i] for i in todo], problem.tests, problem.setup, item_timeout=budget

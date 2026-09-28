@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import re
 import statistics
 import sys
@@ -270,7 +271,7 @@ def render_row(
     if not plausible:
         lines.append("smallest-first repair: no plausible patch")
     for metric in metrics if plausible else ():
-        pick = min(plausible, key=lambda c, m=metric: c.order_key(m))
+        pick = min(plausible, key=functools.partial(repair.Candidate.order_key, metric=metric))
         lines.append(
             f"smallest by {metric:<10} (ties by site order) returns {pick.where}: "
             f"{pick.verdict.upper()}"

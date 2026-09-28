@@ -178,12 +178,12 @@ def unified_diff(old: str, new: str, name: str = "program.py") -> str:
 
 
 def _changed_lines(old: str, new: str) -> list[str]:
-    sm = difflib.SequenceMatcher(a=old.splitlines(), b=new.splitlines(), autojunk=False)
+    a, b = old.splitlines(), new.splitlines()
     out = []
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
         if tag != "equal":
-            out += [f"      - {ln.strip()}" for ln in sm.a[i1:i2]]
-            out += [f"      + {ln.strip()}" for ln in sm.b[j1:j2]]
+            out += [f"      - {ln.strip()}" for ln in a[i1:i2]]
+            out += [f"      + {ln.strip()}" for ln in b[j1:j2]]
     return out
 
 

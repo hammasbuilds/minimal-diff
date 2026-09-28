@@ -45,7 +45,7 @@ class _Watchdog:
     """
 
     def __init__(self) -> None:
-        self._main = threading.main_thread().ident
+        self._main: int = threading.get_ident()  # built on the main thread
         self._lock = threading.Lock()
         self._deadline: float | None = None
         threading.Thread(target=self._watch, daemon=True).start()

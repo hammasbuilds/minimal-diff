@@ -223,6 +223,8 @@ def ast_distance(old: str, new: str, exact: bool = False) -> int | None:
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", SyntaxWarning)
+        a: ast.AST
+        b: ast.AST
         try:
             a, b = ast.parse(old), ast.parse(new)
         except (SyntaxError, ValueError):

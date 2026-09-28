@@ -31,7 +31,7 @@ def cmd_plan(a: argparse.Namespace) -> int:
     jobs = _jobs(a)
     client = CachedClient(OllamaClient(a.model, a.url), data.results_dir() / "model_cache")
     todo = [j for j in jobs if not client.cached(j.prompt.system, j.prompt.user)]
-    by = {}
+    by: dict[tuple[str, str], int] = {}
     for j in jobs:
         key = (j.problem.source, j.prompt.name)
         by[key] = by.get(key, 0) + 1

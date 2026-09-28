@@ -116,6 +116,16 @@ def _metric(g: str, m: str, key: str):
     return f
 
 
+def _tied(g: str, m: str):
+    """1 if more than one plausible patch shares the smallest size by metric `m`."""
+
+    def f(r: dict) -> float | None:
+        bm = r["subsets"][g].get("by_metric")
+        return None if bm is None else float(bm[m]["n_tied"] > 1)
+
+    return f
+
+
 def _metric_verdict(g: str, m: str, label: str):
     def f(r: dict) -> float | None:
         bm = r["subsets"][g].get("by_metric")
@@ -142,14 +152,7 @@ def _metrics_table(rs: list[dict], g: str) -> dict:
             "diff_exact_site_minus_random": cr(rs, _paired(g, site_exact, rand_exact)),
             "diff_overfit_tie_minus_random": cr(rs, _paired(g, tie_over, rand_over)),
             "diff_exact_tie_minus_random": cr(rs, _paired(g, tie_exact, rand_exact)),
-            "tie_at_smallest": cr(
-                rs,
-                lambda r, m=m: (
-                    None
-                    if "by_metric" not in r["subsets"][g]
-                    else float(r["subsets"][g]["by_metric"][m]["n_tied"] > 1)
-                ),
-            ),
+            "tie_at_smallest": cr(rs, _tied(g, m)),
             "truth_strictly_smallest": cr(rs, _metric(g, m, "truth_strictly_smallest")),
             "wrong_patch_as_small_as_truth": cr(rs, _metric(g, m, "overfit_as_small_as_truth")),
         }

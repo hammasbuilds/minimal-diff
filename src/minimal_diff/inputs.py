@@ -46,7 +46,7 @@ def call_args(test: str, fn: str) -> list[ast.expr] | None:
     return None
 
 
-def _const(v: object) -> ast.expr:
+def _const(v: bool | int | float | str) -> ast.expr:
     return ast.Constant(v)
 
 
@@ -62,20 +62,23 @@ def perturb(node: ast.expr) -> list[ast.expr]:
         if isinstance(v, bool):
             out.append(_const(not v))
         elif isinstance(v, int):
-            for w in (v + 1, v - 1, v + 2, v - 2, 0, 1, 2, 3, -1, -v, 2 * v, v // 2, 10, 100):
-                out.append(_const(w))
+            ints = (v + 1, v - 1, v + 2, v - 2, 0, 1, 2, 3, -1, -v, 2 * v, v // 2, 10, 100)
+            out += [_const(w) for w in ints]
         elif isinstance(v, float):
-            for w in (v + 1.0, v - 1.0, v / 2, 0.0, 1.0, -v, 2.5):
-                out.append(_const(w))
+            out += [_const(w) for w in (v + 1.0, v - 1.0, v / 2, 0.0, 1.0, -v, 2.5)]
         elif isinstance(v, str):
-            for w in (v + v[:1], v[:-1], v[1:], "", v.upper(), v.lower(), v[::-1], v * 2, v + " "):
-                out.append(_const(w))
+            strs = (v + v[:1], v[:-1], v[1:], "", v.upper(), v.lower(), v[::-1], v * 2, v + " ")
+            out += [_const(w) for w in strs]
     elif isinstance(node, ast.List | ast.Tuple | ast.Set):
         elts = list(node.elts)
-        cls = type(node)
+        seq = node
 
         def make(items: list[ast.expr]) -> ast.expr:
-            return cls(elts=items, ctx=ast.Load()) if cls is not ast.Set else cls(elts=items)
+            if isinstance(seq, ast.Set):
+                return ast.Set(elts=items)
+            if isinstance(seq, ast.List):
+                return ast.List(elts=items, ctx=ast.Load())
+            return ast.Tuple(elts=items, ctx=ast.Load())
 
         if elts:
             out.append(make(elts[:-1]))
@@ -88,7 +91,7 @@ def perturb(node: ast.expr) -> list[ast.expr]:
                     new = list(elts)
                     new[i] = p
                     out.append(make(new))
-        if cls is not ast.Set:  # `{}` is a dict, not an empty set
+        if not isinstance(seq, ast.Set):  # `{}` is a dict, not an empty set
             out.append(make([]))
     return out
 

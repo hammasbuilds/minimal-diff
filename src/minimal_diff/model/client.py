@@ -38,7 +38,8 @@ class Reply:
 
 
 class Client(Protocol):
-    model: str
+    @property
+    def model(self) -> str: ...
 
     def generate(self, system: str, prompt: str) -> Reply: ...
 
