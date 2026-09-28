@@ -1,4 +1,4 @@
-"""Repair six real MBPP/HumanEval bugs whose fix is known, and show what the search returns.
+"""Repair six real MBPP/HumanEval bugs whose fix is known, and one file of your own.
 
 Each task is a reference solution with one injected single-point bug and at least one
 visible assert that fails. The classical repair search enumerates every one-edit
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import sys
 
-from minimal_diff import cli, repair, tasks
+from minimal_diff import cli, repair, tasks, userfix
 
 # Picked from results/classical_*.jsonl.gz to cover the outcomes the study counts.
 DEMO = [
@@ -52,6 +52,20 @@ DEMO = [
 ]
 
 
+# Sample 7: `minimal-diff fix` on a file of your own - comments and all.
+OWN_PROGRAM = '''"""Shapes."""
+
+# area of a rectangle
+def area(w, h):  # width, height
+    return w * h
+
+
+def perimeter(w,h):
+    return 2 * (w - h)   # the bug: should be +
+'''
+OWN_ASSERTS = ["assert perimeter(2, 3) == 10", "assert perimeter(1, 1) == 4"]
+
+
 def main() -> int:
     for task_id, regime, why in DEMO:
         source = task_id.split("/", 1)[0]
@@ -66,6 +80,11 @@ def main() -> int:
         print(f"{why}\n")
         print(cli.render_row(task, prob, row, regime))
         print()
+    print("=" * 88)
+    print("7. Your own file: the same search, and a diff that applies to it\n")
+    print("$ minimal-diff fix shapes.py " + " ".join(f'--assert "{a}"' for a in OWN_ASSERTS))
+    res = userfix.fix(OWN_PROGRAM, OWN_ASSERTS)
+    print(userfix.render(res, repair.DEFAULT_METRIC, name="shapes.py"))
     return 0
 
 
