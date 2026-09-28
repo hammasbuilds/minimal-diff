@@ -375,13 +375,16 @@ def run_asserts(
     stop_on_first_failure: bool = True,
     item_timeout: float = ITEM_TIMEOUT,
     fresh: bool = False,
+    sys_path: Sequence[str] = (),
 ) -> list[list[Result]]:
-    """Every candidate against every test. Returns `[candidate][test]`."""
+    """Every candidate against every test. Returns `[candidate][test]`.
+
+    `sys_path` folders are importable while the candidates run.
+    """
     items = [{"g": ci, "code": c, "test": t} for ci, c in enumerate(candidates) for t in tests]
     stop = ("fail", "error", "timeout") if stop_on_first_failure else ()
-    res = run_job(
-        Job("asserts", items, {"setup": setup}, stop), item_timeout=item_timeout, fresh=fresh
-    )
+    ctx = {"setup": setup, "sys_path": list(sys_path)}
+    res = run_job(Job("asserts", items, ctx, stop), item_timeout=item_timeout, fresh=fresh)
     k = len(tests)
     return [res[ci * k : (ci + 1) * k] for ci in range(len(candidates))]
 

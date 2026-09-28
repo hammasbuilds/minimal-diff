@@ -16,7 +16,23 @@ def statuses(rows):
 def test_outcomes_are_kept_distinct():
     rows = sandbox.run_asserts([OK, WRONG, "def f(x):\n    return 1 / 0\n"], TESTS, item_timeout=3)
     assert statuses(rows) == [["pass", "pass"], ["fail", "skipped"], ["error", "skipped"]]
-    assert rows[2][0].detail == "ZeroDivisionError"
+    # The message is kept: `fix` prints it when the unedited program errors.
+    assert rows[2][0].detail == "ZeroDivisionError: division by zero"
+
+
+def test_error_detail_is_the_type_alone_when_the_exception_has_no_message():
+    rows = sandbox.run_asserts(["def f(x):\n    raise KeyError\n"], TESTS[:1])
+    assert rows[0][0].status == "error" and rows[0][0].detail == "KeyError"
+
+
+def test_sys_path_makes_a_neighbouring_module_importable_for_that_job_only(tmp_path):
+    (tmp_path / "helper_md_test.py").write_text("def one():\n    return 1\n")
+    prog = "import helper_md_test\ndef f(x):\n    return x + helper_md_test.one()\n"
+    rows = sandbox.run_asserts([prog], TESTS, sys_path=[str(tmp_path)])
+    assert statuses(rows) == [["pass", "pass"]]
+    # The next job in the same reused worker does not see the folder or the module.
+    [row] = sandbox.run_asserts([prog], TESTS[:1])
+    assert row[0].status == "error" and "ModuleNotFoundError" in row[0].detail
 
 
 def test_hang_and_crash_do_not_take_later_candidates_with_them():

@@ -229,7 +229,8 @@ def _run_assert(nss: _Namespaces, item: dict) -> dict:
     except ItemTimeout:
         raise
     except BaseException as e:
-        return {"status": "error", "detail": type(e).__name__}
+        msg = str(e).splitlines()[0][:120] if str(e) else ""
+        return {"status": "error", "detail": type(e).__name__ + (f": {msg}" if msg else "")}
     return {"status": "pass"}
 
 
@@ -298,6 +299,29 @@ def run_job(job: dict, watchdog: _Watchdog) -> None:
     stop_on = set(job.get("stop_on", ()))
     seconds = float(job.get("item_timeout", 4.0))
     nss = _Namespaces(ctx.get("setup", ""))
+    # Folders to import from (a program's own directory, so `import helper` next to it
+    # works); prepended for this job only.
+    extra = [p for p in ctx.get("sys_path", ()) if p not in sys.path]
+    sys.path[:0] = extra
+    before = set(sys.modules)
+    try:
+        _run_items(job, ctx, watchdog, nss, stop_on, seconds)
+    finally:
+        # The worker is reused: forget the folders, and any module imported from them.
+        for p in extra:
+            if p in sys.path:
+                sys.path.remove(p)
+        for name in set(sys.modules) - before if extra else ():
+            path = getattr(sys.modules[name], "__file__", None) or ""
+            if any(path.startswith(p) for p in extra):
+                del sys.modules[name]
+    _OUT.write(DONE + "\n")
+    _OUT.flush()
+
+
+def _run_items(
+    job: dict, ctx: dict, watchdog: _Watchdog, nss: _Namespaces, stop_on: set, seconds: float
+) -> None:
     stopped: set = set()
     # Candidate code prints and writes stderr; none of it may reach the protocol stream.
     sys.stdout = io.StringIO()
@@ -318,8 +342,6 @@ def run_job(job: dict, watchdog: _Watchdog) -> None:
         # Keep the swallowed output from growing without bound across thousands of items.
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
-    _OUT.write(DONE + "\n")
-    _OUT.flush()
 
 
 def main() -> None:
