@@ -11253,7 +11253,8 @@
       "one_token_one_node": 0.8503,
       "one_token_raw": 0.9676,
       "one_token_raw_one_node": 0.841,
-      "tokens_below_raw": 0.0253
+      "tokens_below_raw": 0.0253,
+      "tokens_below_raw_patches": 57
     },
     "hidden_inputs_per_problem": {
       "mean": 482.8,
@@ -22518,7 +22519,8 @@
       "one_token_one_node": 0.8861,
       "one_token_raw": 0.9497,
       "one_token_raw_one_node": 0.8644,
-      "tokens_below_raw": 0.036
+      "tokens_below_raw": 0.036,
+      "tokens_below_raw_patches": 463
     },
     "hidden_inputs_per_problem": {
       "mean": 291.5,

@@ -303,6 +303,7 @@ def _size_shares(rs: list[dict], g: str) -> dict:
         "one_token_raw": share(lambda z: z["tokens_raw"] == 1),
         "one_token_raw_one_node": share(lambda z: z["tokens_raw"] == 1 and z["ast_nodes"] == 1),
         "tokens_below_raw": share(lambda z: z["tokens"] < z["tokens_raw"]),
+        "tokens_below_raw_patches": sum(1 for z in sizes if z["tokens"] < z["tokens_raw"]),
     }
 
 

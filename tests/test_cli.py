@@ -47,6 +47,13 @@ def test_full_pipeline_on_fixture_data(fixture_env, capsys):
     for source in ("mbpp", "humaneval"):
         assert summary[source]["truth_in_space"]["rate"] == 1.0
         assert summary[source]["regimes"]["all"]["truth_plausible"]["rate"] == 1.0
+        shares = summary[source]["patch_size_plausible_all"]
+        assert shares["patches"] > 0
+        # The bracket rule can only lower a count, so it can only raise the one-token share.
+        assert 0 < shares["one_token_raw"] <= shares["one_token"] <= 1
+        assert shares["one_token_one_node"] <= shares["one_token"]
+        vs_raw = summary[source]["regimes"]["all"]["tokens_vs_tokens_raw"]
+        assert 0 <= vs_raw["tasks_pick_differs"] <= summary[source]["tasks"]
 
     # Re-running repair is a no-op: every task is already in the results file.
     assert cli.main(["repair", "--workers", "2"]) == 0
