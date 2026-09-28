@@ -17,6 +17,7 @@ import ctypes
 import io
 import json
 import math
+import os
 import sys
 import threading
 import time
@@ -313,7 +314,7 @@ def run_job(job: dict, watchdog: _Watchdog) -> None:
                 sys.path.remove(p)
         for name in set(sys.modules) - before if extra else ():
             path = getattr(sys.modules[name], "__file__", None) or ""
-            if any(path.startswith(p) for p in extra):
+            if any(path.startswith(os.path.join(p, "")) for p in extra):
                 del sys.modules[name]
     _OUT.write(DONE + "\n")
     _OUT.flush()
