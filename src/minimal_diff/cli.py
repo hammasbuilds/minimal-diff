@@ -254,10 +254,9 @@ def render_row(
             continue
         z = c["size"]
         mark = "<- the known fix" if c["is_truth"] else ""
-        lines.append(
-            f"  {c['where']:<18} tokens={z['tokens']} ast={z['ast_nodes']} "
-            f"at_fault={'yes' if z['touches_fault'] else 'no ':<3}  {c['verdict']:<10} {mark}"
-        )
+        fault = "yes" if z["touches_fault"] else "no"
+        head = f"  {c['where']:<18} tokens={z['tokens']} ast={z['ast_nodes']} "
+        lines.append(f"{head}at_fault={fault:<3}  {c['verdict']:<10} {mark}".rstrip())
         new_lines = edits[c["index"]].code.splitlines()
         for old, new in zip(buggy_lines, new_lines, strict=True):
             if old != new:
@@ -289,7 +288,7 @@ def _explain(witness: str, prob: tasks.ProblemRecord) -> str:
 
 
 def _indent(code: str) -> str:
-    return "\n".join(f"    {ln}" for ln in code.splitlines())
+    return "\n".join(f"    {ln}".rstrip() for ln in code.splitlines())
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -354,6 +354,7 @@ def _sizes(rs: list[dict], g: str) -> dict:
         out[verdict] = {
             "patches": n,
             "mean_tokens": round(sum(x["tokens"] for x in sizes) / n, 3),
+            "mean_tokens_raw": round(sum(x["tokens_raw"] for x in sizes) / n, 3),
             "mean_ast_nodes": round(sum(x["ast_nodes"] or 0 for x in sizes) / n, 3),
             "mean_lines": round(sum(x["lines"] for x in sizes) / n, 3),
             "share_touching_fault": round(sum(x["touches_fault"] for x in sizes) / n, 4),

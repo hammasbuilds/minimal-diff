@@ -11228,6 +11228,7 @@
       "exact": {
         "patches": 1167,
         "mean_tokens": 1.006,
+        "mean_tokens_raw": 1.076,
         "mean_ast_nodes": 1.165,
         "mean_lines": 1.0,
         "share_touching_fault": 1.0
@@ -11235,6 +11236,7 @@
       "no_witness": {
         "patches": 835,
         "mean_tokens": 1.014,
+        "mean_tokens_raw": 1.024,
         "mean_ast_nodes": 1.166,
         "mean_lines": 1.0,
         "share_touching_fault": 0.8886
@@ -11242,6 +11244,7 @@
       "overfit": {
         "patches": 249,
         "mean_tokens": 1.012,
+        "mean_tokens_raw": 1.108,
         "mean_ast_nodes": 1.052,
         "mean_lines": 1.0,
         "share_touching_fault": 0.8635
@@ -22494,6 +22497,7 @@
       "exact": {
         "patches": 5564,
         "mean_tokens": 1.006,
+        "mean_tokens_raw": 1.059,
         "mean_ast_nodes": 1.122,
         "mean_lines": 1.0,
         "share_touching_fault": 1.0
@@ -22501,6 +22505,7 @@
       "no_witness": {
         "patches": 2758,
         "mean_tokens": 1.018,
+        "mean_tokens_raw": 1.036,
         "mean_ast_nodes": 1.181,
         "mean_lines": 1.0,
         "share_touching_fault": 0.8677
@@ -22508,6 +22513,7 @@
       "overfit": {
         "patches": 4522,
         "mean_tokens": 1.031,
+        "mean_tokens_raw": 1.161,
         "mean_ast_nodes": 1.098,
         "mean_lines": 1.0,
         "share_touching_fault": 0.6221

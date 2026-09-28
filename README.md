@@ -15,7 +15,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="python">
   <img src="https://img.shields.io/badge/runtime%20deps-0-brightgreen" alt="zero dependencies">
-  <img src="https://img.shields.io/badge/tests-115-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-149-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/repair%20tasks-6%2C731-blue" alt="tasks">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"></a>
 </p>
@@ -56,43 +56,45 @@ flowchart LR
 The known fix is always one edit away (the repair operators are a superset of the inverse of
 every injected mutation - 100% of 6,731 tasks, checked per task), so the search never fails
 to *reach* the right answer. The question is whether the tests and a size preference *pick*
-it. The scope is deliberately narrow: this is the one-edit space, where 95% of MBPP's
-plausible patches change exactly one token and 86% change exactly one token *and* one AST
-node, and where only 44% of tasks (2,434 of 5,564) have more than one plausible patch for
-any ranking to choose between.
+it. The scope is deliberately narrow: this is the one-edit space, where 98.4% of MBPP's
+12,844 plausible patches change exactly one token and 88.6% exactly one token *and* one AST
+node (95.0% and 86.4% if the brackets `ast.unparse` adds are counted as tokens), and where
+only 44% of tasks (2,434 of 5,564) have more than one plausible patch for any ranking to
+choose between.
 
 > **In that space, size cannot tell right from wrong. Preferring the smaller patch with ties
-> broken at random moves MBPP's exact-fix rate by +0.5 points counting tokens and −1.0
+> broken at random moves MBPP's exact-fix rate by +0.3 points counting tokens and −1.4
 > counting tokens then AST nodes; which of those two you count moves "smallest-first" from
-> 67.1% to 73.6%. Showing the repairer more tests moves the wrong-patch rate on HumanEval
-> from 35.8% to 3.9%.**
+> 66.7% to 73.9%. Showing the repairer more tests moves the wrong-patch rate on HumanEval
+> from 36.2% to 3.8%.**
 
 ## Findings
 
 Every number is from `results/classical_repair.json` (6,731 tasks: 5,564 over 775 MBPP
-problems, 1,167 over 151 HumanEval problems). Brackets are 95% cluster-bootstrap intervals
+problems, 1,167 over 151 HumanEval problems). Square brackets are 95% cluster-bootstrap intervals
 resampling *problems*, because the tasks of one problem share a test suite. "Paired" means the
 two policies are compared task by task and the interval is on the difference.
 
 | | Finding | The numbers (MBPP, all 3 asserts shown, unless noted) |
 |---|---|---|
-| **1** | **The size metric decides the headline.** "Smallest by tokens" and "smallest by tokens, then AST nodes" are both reasonable readings of "the fix that changes the least". They return different patches on hundreds of tasks. | exact: tokens **73.6%** [71.5, 75.6] vs tokens+AST **67.1%** [64.7, 69.3]; overfit 13.2% vs 17.2% |
-| **2** | **Size itself buys almost nothing.** With ties broken at random, preferring the smaller patch over *any* plausible patch changes the exact-fix rate by less than a point, in a direction that depends on the metric. | vs any plausible (71.0% exact): tokens **+0.48 pp** [+0.31, +0.67]; tokens+AST **−1.00 pp** [−1.25, −0.76]; HumanEval (all) tokens +0.19 pp [−0.16, +0.48] |
-| **3** | **Because wrong patches are as small as right ones.** At the smallest token count 43% of tasks have a tie; in 27% a provably wrong patch is at least as small as the fix. The fix is *strictly* the smallest in 57%. | wrong patch ≤ fix 26.7% [24.2, 29.4]; mean size of a wrong plausible patch 1.16 tokens / 1.10 nodes, of the fix 1.06 / 1.12 |
-| **4** | **Tie-breaking by position is an artefact, and a large one.** "Smallest by tokens, earliest site" gains 2.6 pp over any plausible patch - but all of it comes from negated conditions, where the fix (the `if` node) precedes every competing edit in the walk. Without them the same policy *loses* 2.6 pp. | tokens + site order vs any: +2.59 pp [+1.67, +3.51]; excluding `negate_if`: **−2.59 pp** [−3.47, −1.69] |
-| **5** | **Negated conditions are where the metric bites.** Removing a `not` is one token but two AST nodes, so any AST-aware metric ranks it below every one-node operator swap. | `negate_if` (680 tasks) exact: tokens + site 86.9% · tokens, random tie 45.2% · any plausible 47.1% · **tokens+AST 21.9%** |
-| **6** | **What does work is more tests.** Same bugs, same search, only the number of visible asserts changes. | HumanEval overfit (tokens) **35.8% → 15.3% → 3.9%** at 1 → 3 → 8.1 asserts; MBPP 30.3% → 13.2% at 1 → 3 |
-| **7** | **Knowing where the bug is helps only when tests are thin.** Restricting the search to the faulty line - an oracle no real tool has - halves MBPP's wrong patches and does nothing measurable on HumanEval's full suite. | MBPP 13.2% → 8.5%, paired **4.8 pp** [3.9, 5.7]; HumanEval (all) 0.3 pp [−0.3, +0.9] |
+| **1** | **The size metric decides the headline.** "Smallest by tokens" and "smallest by tokens, then AST nodes" are both reasonable readings of "the fix that changes the least". They return different patches on hundreds of tasks. | exact: tokens **73.9%** [71.8, 75.8] vs tokens+AST **66.7%** [64.2, 68.9]; overfit 13.2% vs 17.6% |
+| **2** | **Size itself buys almost nothing.** With ties broken at random, preferring the smaller patch over *any* plausible patch changes the exact-fix rate by less than half a point, in a direction that depends on the metric. | vs any plausible (71.0% exact): tokens **+0.30 pp** [+0.20, +0.42]; tokens+AST **−1.35 pp** [−1.58, −1.13]; HumanEval (all) tokens +0.26 pp [+0.11, +0.46] |
+| **3** | **Because wrong patches are as small as right ones.** At the smallest token count 43% of tasks have a tie; in 27% a provably wrong patch is at least as small as the fix. The fix is *strictly* the smallest in 57%. | wrong patch ≤ fix 27.3% [24.7, 30.1]; mean size of a wrong plausible patch 1.03 tokens / 1.10 nodes, of the fix 1.01 / 1.12 |
+| **4** | **Tie-breaking by position is an artefact, and a large one.** "Smallest by tokens, earliest site" gains 2.9 pp over any plausible patch - but all of it comes from negated conditions, where the fix (the `if` node) precedes every competing edit in the walk. Without them the same policy *loses* 3.1 pp. | tokens + site order vs any: +2.85 pp [+1.98, +3.72]; excluding `negate_if`: **−3.08 pp** [−3.94, −2.21] |
+| **5** | **Negated conditions are where the metric bites.** Removing a `not` is one token but two AST nodes, so any AST-aware metric ranks it below every one-node operator swap. | `negate_if` (680 tasks) exact: tokens + site 92.5% · tokens, random tie 47.2% · any plausible 47.1% · **tokens+AST 21.9%** |
+| **6** | **What does work is more tests.** Same bugs, same search, only the number of visible asserts changes. | HumanEval overfit (tokens) **36.2% → 15.1% → 3.8%** at 1 → 3 → 8.1 asserts; MBPP 30.7% → 13.2% at 1 → 3 |
+| **7** | **Knowing where the bug is helps only when tests are thin.** Restricting the search to the faulty line - an oracle no real tool has - cuts MBPP's wrong patches by about a third and does nothing measurable on HumanEval's full suite. | MBPP 13.2% → 8.4%, paired **4.8 pp** [3.9, 5.7]; HumanEval (all) 0.3 pp [−0.3, +0.9] |
 
 Every metric side by side, MBPP with all three asserts (`minimal-diff report` prints this):
 
 | size metric | exact, ties by site | overfit, ties by site | exact, random ties | overfit, random ties | site order − any plausible, overfit |
 |---|---|---|---|---|---|
-| tokens | 73.6% | 13.2% | 71.5% | 15.0% | −2.2 pp [−3.0, −1.4] |
+| tokens | 73.9% | 13.2% | 71.3% | 15.2% | −2.3 pp [−3.1, −1.5] |
 | lines | 73.5% | 13.5% | 71.0% | 15.4% | −2.0 pp [−2.7, −1.2] |
 | AST nodes | 66.8% | 17.6% | 69.7% | 16.2% | +2.1 pp [+1.4, +2.9] |
-| tokens, then AST nodes | 67.1% | 17.2% | 70.0% | 15.8% | +1.8 pp [+1.0, +2.6] |
-| AST nodes, then tokens | 67.1% | 17.2% | 70.0% | 15.8% | +1.8 pp [+1.0, +2.6] |
+| tokens, then AST nodes | 66.7% | 17.6% | 69.7% | 16.2% | +2.2 pp [+1.4, +2.9] |
+| AST nodes, then tokens | 66.7% | 17.6% | 69.7% | 16.2% | +2.2 pp [+1.4, +2.9] |
+| *tokens, brackets counted (robustness check)* | *73.6%* | *13.2%* | *71.5%* | *15.0%* | *−2.2 pp [−3.0, −1.4]* |
 | *no preference (any plausible)* | *71.0%* | *15.4%* | | | |
 
 (Every one-edit patch changes exactly one line, so "lines" with random ties *is* "any
@@ -101,9 +103,21 @@ plausible".) An earlier version of this README ranked by tokens then AST nodes, 
 independent review showed it was the metric: the conclusion that survives is the one above -
 that the ranking is fragile and size carries almost no signal here.
 
+**Counting brackets.** `tokens` does not count a bracket that only groups (one that does not
+open a call or a definition's parameters). Those are not edits anyone types: when the search
+swaps `*` for `+` in `a + b * c`, `ast.unparse` has to write `a + (b + c)`, and counting the
+brackets made that one-operator patch three tokens. A second review caught this. The rule
+re-measures 463 of MBPP's 12,844 plausible patches and changes the pick on 119 of 5,564
+tasks. The headline barely moves - 73.6% → 73.9% exact and 13.25% → 13.16% overfit, paired
+differences +0.25 pp [−0.05, +0.55] and −0.09 pp [−0.36, +0.20] - but finding 2 shrinks:
+counting brackets, a size preference looked worth +0.48 pp [+0.31, +0.67], and part of that
+was brackets, because the wrong patches carried more of them (mean 1.16 tokens against the
+fix's 1.06; without brackets 1.03 against 1.01). Both counts are in the results (`tokens`,
+`tokens-raw` and `tokens_vs_tokens_raw`).
+
 Long solutions contribute more mutants, so the tables weight each task equally. Weighting each
 *problem* equally instead (`rate_per_problem` in the results) moves MBPP smallest-by-tokens to
-79.2% exact and 9.5% overfit, against 76.5% and 11.2% for any plausible patch.
+79.4% exact and 9.4% overfit, against 76.5% and 11.2% for any plausible patch.
 
 ### How strong is the oracle?
 
@@ -129,11 +143,11 @@ Two self-checks, both in `results/`:
 - **Worker reuse changes nothing** (`isolation_check.json`): 797 sampled candidates re-run each
   in a brand-new interpreter agree with the pooled run 797 of 797.
 
-Of the 737 overfit patches smallest-by-tokens returns on MBPP with all asserts shown, 644 were
-caught by a near input, **85 only by fuzzing**, 6 by hanging and 2 by a hidden assert. More
+Of the 732 overfit patches smallest-by-tokens returns on MBPP with all asserts shown, 641 were
+caught by a near input, **82 only by fuzzing**, 7 by hanging and 2 by a hidden assert. More
 inputs kept finding wrong programs, so the "no witness" bucket still holds some: **13.2% is a
-lower bound on MBPP's overfit rate and 13.2% + 13.2% = 26.4% an upper bound.** Some no-witness
-patches are genuinely correct and interesting in their own right: 14.9% of the ones MBPP
+lower bound on MBPP's overfit rate and 13.2% + 13.0% = 26.2% an upper bound.** Some no-witness
+patches are genuinely correct and interesting in their own right: 15.1% of the ones MBPP
 returns edit a line that was never broken and compensate for the bug instead (sample 5).
 
 ### Controls
@@ -142,7 +156,7 @@ returns edit a line that was never broken and compensate for the bug instead (sa
   all. The no-preference baseline for findings 2 and 4.
 - **Random tie-break**: separates a size effect from a site-order effect (finding 4).
 - **Five size metrics**: tokens, AST nodes, lines, and both lexicographic combinations
-  (finding 1).
+  (finding 1), plus tokens with grouping brackets counted, as a robustness check.
 - **At-fault oracle**: the smallest patch that edits only the faulty line (finding 7).
 - **Visible-test regimes** `k1` / `k3` / `all`: prefixes of one fixed assert order that
   starts with an assert the bug fails, so every regime has a failing test and each contains
@@ -163,14 +177,23 @@ changes the answer more than size does.
 
 ## Input / Output
 
-`uv run python demo.py` repairs six real tasks live and prints this (abridged only where
-marked). Each ends with what "smallest" returns under two size metrics.
+`uv run python demo.py` repairs six real tasks live, then runs `fix` on a small file, and
+prints what is quoted below verbatim; the one cut is marked in square brackets. Samples
+1-6 end with what "smallest" returns under two size metrics.
 
 **1. HumanEval's six asserts pin the fix down: one plausible patch, and it is the fix**
 
 ```
 task humaneval/52/compare@17  (injected: compare, faulty line [9])
-    ...
+
+buggy program:
+    def below_threshold(l: list, t: int):
+        """Return True if all numbers in the list l are below threshold t.
+        >>> below_threshold([1, 2, 4, 10], 100)
+        True
+        >>> below_threshold([1, 20, 4, 10], 5)
+        False
+        """
         for e in l:
             if e > t:
                 return False
@@ -253,10 +276,21 @@ visible asserts shown to the repairer (k1):
       - if str[0] != str[-1]:
       + if str[0] <= str[-1]:
       witness: fails `assert check_Equality("ab") == "Not Equal"`
-  ... (GtE, str[1], str[-2]: all overfit, same witness style)
+  compare@5:0:GtE    tokens=1 ast=1 at_fault=yes  overfit
+      - if str[0] != str[-1]:
+      + if str[0] >= str[-1]:
+      witness: fails `assert check_Equality("mad") == "Not Equal"`
   compare@5:0:Eq     tokens=1 ast=1 at_fault=yes  exact      <- the known fix
       - if str[0] != str[-1]:
       + if str[0] == str[-1]:
+  const@9:+1         tokens=1 ast=1 at_fault=yes  overfit
+      - if str[0] != str[-1]:
+      + if str[1] != str[-1]:
+      witness: fails `assert check_Equality("mad") == "Not Equal"`
+  const@17:+1        tokens=1 ast=1 at_fault=yes  overfit
+      - if str[0] != str[-1]:
+      + if str[0] != str[-2]:
+      witness: fails `assert check_Equality("mad") == "Not Equal"`
 
 smallest by tokens     (ties by site order) returns negate_if@4: NO_WITNESS
 smallest by tokens+ast (ties by site order) returns compare@5:0:LtE: OVERFIT
@@ -265,6 +299,8 @@ smallest by tokens+ast (ties by site order) returns compare@5:0:LtE: OVERFIT
 **4. ...shown all three, two are left: the fix, and an equivalent double negative**
 
 ```
+[task header and buggy program: the same as sample 3, cut]
+
 visible asserts shown to the repairer (all):
   [   fail] assert check_Equality("abcda") == "Equal"
   [   fail] assert check_Equality("ab") == "Not Equal"
@@ -301,7 +337,12 @@ buggy program:
             return 1
         return 2
 
-3 of 32 one-edit candidates pass every shown assert:
+visible asserts shown to the repairer (all):
+  [   fail] assert min_Num([1,2,3,4,5,6,7,8,9],9) == 1
+  [   fail] assert min_Num([1,2,3,4,5,6,7,8],8) == 2
+  [   fail] assert min_Num([1,2,3],3) == 2
+
+32 one-edit candidates, 3 pass every shown assert:
   const@8:+1         tokens=1 ast=1 at_fault=no   no_witness
       - odd = 0
       + odd = 1
@@ -341,10 +382,10 @@ visible asserts shown to the repairer (all):
   [   fail] assert next_Power_Of_2(17) == 32
 
 34 one-edit candidates, 2 pass every shown assert:
-  unnegate_if@8      tokens=3 ast=2 at_fault=yes  exact      <- the known fix
+  unnegate_if@8      tokens=1 ast=2 at_fault=yes  exact      <- the known fix
       - if not (n and (not n & n - 1)):
       + if n and (not n & n - 1):
-  boolop@11:Or       tokens=3 ast=1 at_fault=yes  overfit
+  boolop@11:Or       tokens=1 ast=1 at_fault=yes  overfit
       - if not (n and (not n & n - 1)):
       + if not (n or not n & n - 1):
       witness: next_Power_Of_2(1): reference 1, patch 2
@@ -353,10 +394,39 @@ smallest by tokens     (ties by site order) returns unnegate_if@8: EXACT
 smallest by tokens+ast (ties by site order) returns boolop@11:Or: OVERFIT
 ```
 
-Both patches change three tokens (the tokenizer counts the parentheses). By AST nodes the
-wrong `and`→`or` swap is one relabel and the fix is two deletions, so the AST-aware ranking
-returns the wrong program; the token ranking returns the fix only because the `if` comes
-first in the walk. This is finding 5 in one task.
+Both patches change one token: the fix drops the `not`, the wrong patch swaps `and` for
+`or`, and the brackets that come and go with them only group, so they are not counted
+(counting them, both are three). By AST nodes the swap is one relabel and the fix is two
+deletions, so the AST-aware ranking returns the wrong program; the token ranking returns the
+fix only because the `if` comes first in the walk. This is finding 5 in one task.
+
+**7. Your own file: the same search, and a diff that applies to it**
+
+```
+$ minimal-diff fix shapes.py --assert "assert perimeter(2, 3) == 10" --assert "assert perimeter(1, 1) == 4"
+1 of 20 one-edit changes pass every assert (1 tied at the smallest size by tokens).
+Passing the asserts is not the same as being correct: with no reference to check against, only more tests can tell these apart.
+
+  binop@22:Add         tokens=1 ast=1 lines=1
+      - return 2 * (w - h)   # the bug: should be +
+      + return 2 * (w + h)   # the bug: should be +
+
+smallest by tokens (ties by position): binop@22:Add
+
+--- a/shapes.py
++++ b/shapes.py
+@@ -6,4 +6,4 @@
+ 
+ 
+ def perimeter(w,h):
+-    return 2 * (w - h)   # the bug: should be +
++    return 2 * (w + h)   # the bug: should be +
+```
+
+Only the edited span changes: the docstring, the comments and the unusual spacing in
+`perimeter(w,h)` survive, and the hunk carries the file's real line numbers, so the diff
+applies with `git apply` or `patch -p1` (the tests apply it both ways). With one plausible
+patch there is nothing to rank; the warning about correctness still stands.
 
 ## Repair your own function
 
@@ -364,12 +434,28 @@ first in the walk. This is finding 5 in one task.
 uv run minimal-diff fix buggy.py --tests test_buggy.py        # top-level asserts in a file
 uv run minimal-diff fix buggy.py --assert "assert area(2, 3) == 6" --assert "assert area(4, 5) == 20"
 uv run minimal-diff fix buggy.py --tests t.py --metric tokens+ast --top 10
+uv run minimal-diff fix buggy.py --tests t.py --diff | git apply   # apply the smallest patch
 ```
 
 It runs the same one-edit search against your asserts and lists every patch that passes them,
-smallest first, with a unified diff of the first. There is no reference here, so it says how
-many patches tied and that passing is not correctness - which, per the findings, is the part
-to take seriously.
+smallest first, with a unified diff of the first (sample 7). There is no reference here, so it
+says how many patches tied and that passing is not correctness - which, per the findings, is
+the part to take seriously.
+
+- **Your file, not a reformatted copy.** Each candidate rewrites only the span of the node it
+  edits, so comments, blank lines, line endings and formatting survive, and the diff applies
+  with `git apply` or `patch -p1` from the file's folder.
+- **Modules next to the file import.** The program's folder is on `sys.path` while it runs, so
+  `import helper` works; the folder and anything imported from it are forgotten afterwards.
+- **Broken tests are refused, not searched.** An `--assert` that is not exactly one `assert`
+  statement (`f(2) == 4` would run, do nothing and "pass") is rejected. If every assert errors
+  on the unedited program with a `NameError`, `ImportError` or `SyntaxError` - a misspelt
+  function name - it prints each error and stops. An error the bug itself causes (`IndexError`)
+  is printed and then repaired like a failure.
+- **Asserts it does not run are named.** Only top-level asserts in `--tests` run; any inside a
+  function or class is reported with its line number.
+- **Exit status** 0 when a patch passes (or nothing needed fixing), 1 when no one-edit patch
+  passes, 2 on bad input.
 
 ## The model arm (queued)
 
@@ -409,8 +495,8 @@ git clone https://github.com/hammasbuilds/minimal-diff
 cd minimal-diff
 uv sync
 
-uv run pytest -q                       # 115 tests, no dataset, no model, ~50 s
-uv run python demo.py                  # the six repairs above, live
+uv run pytest -q                       # 149 tests, no dataset, no model, ~2 min
+uv run python demo.py                  # the seven samples above, live
 uv run minimal-diff show mbpp/3/binop@17 --regime k1   # any task, any regime
 uv run minimal-diff report             # re-aggregate results/classical_*.jsonl.gz
 ```
@@ -425,6 +511,10 @@ uv run minimal-diff check-isolation    # -> results/isolation_check.json
 uv run minimal-diff check-oracle       # -> results/oracle_check.json
 ```
 
+After a change to the size measures alone, `uv run minimal-diff rescore` re-measures every
+patch in `results/classical_*.jsonl.gz` from the task files - no candidate is re-run, and a
+test checks it writes exactly the row `repair` would - in about ten minutes instead of an hour.
+
 ## Layout
 
 ```
@@ -436,33 +526,35 @@ src/minimal_diff/
   sandbox.py      reusable worker processes, per-item timeouts, a memory cap
   _child.py       the process that runs candidate code; interrupts its own hangs
   oracle.py       exact / no_witness / overfit, with the witness
-  diffmetrics.py  lines, tokens, Zhang-Shasha AST distance, unrelated lines
-  repair.py       the search, the five size metrics and the selection policies
+  diffmetrics.py  lines, tokens (grouping brackets aside), Zhang-Shasha AST distance, unrelated lines
+  repair.py       the search, the size metrics, the selection policies, rescoring
   userfix.py      `minimal-diff fix`: the search on your own file and asserts
   study.py        run every task (resumable) and aggregate
   stats.py        cluster bootstrap over problems
   isolation.py    self-checks: pooled vs fresh interpreter, oracle false positives
-  cli.py          `minimal-diff` build-tasks | repair | report | show | fix | check-* | model
+  cli.py          `minimal-diff` build-tasks | repair | rescore | report | show | fix | check-* | model
   model/          prompts, Ollama client + disk cache, reply parsing and diff applying, scoring
 data/raw/         mbpp.jsonl (CC BY 4.0), humaneval.jsonl (MIT), humanevalplus.jsonl.gz (Apache-2.0)
 data/licenses/    the three data licences in full; NOTICE says what came from where
 data/             problems_*.jsonl.gz, tasks_*.jsonl.gz (built by build-tasks)
 results/          per-task rows, the summary, both self-checks, build stats, model plan
 scripts/run_models.sh
+.github/workflows/ci.yml   ruff, mypy and pytest on Linux and Windows
 demo.py
 ```
 
 ## Requirements
 
-Python 3.11+ and `uv`. Zero runtime dependencies; `pytest` and `ruff` for development. The
+Python 3.11+ and `uv`. Zero runtime dependencies; `pytest`, `ruff` and `mypy` for development. The
 model arm needs Ollama with `qwen2.5-coder:14b` (about 11 GB of VRAM at Q4). Developed on
 Windows 11; the sandbox caps child memory with a Job Object there and `RLIMIT_AS` elsewhere.
 
 ## Tests
 
 ```bash
-uv run pytest -q     # 115
-uv run ruff check src tests
+uv run pytest -q     # 149
+uv run ruff check src tests demo.py
+uv run mypy          # src, clean
 ```
 
 Tests build their own programs; `MINIMAL_DIFF_DATA` and `MINIMAL_DIFF_RESULTS` are pointed
@@ -473,7 +565,10 @@ that every injected bug is one repair edit from its reference, the tree edit dis
 textbook cases and its shortcut against the full computation, the oracle's three buckets
 (and that a slow-but-correct patch is not a hang, a crash is not a hang, and a program's own
 classes compare by value), every size metric including the un-negation case, the selection
-policies, the `fix` command, the storage round trip, the CLI end to end on a fixture dataset, and the
+policies, grouping brackets against call brackets, rescoring against a fresh repair, the
+`fix` command (its diff applied with `git apply` and `patch` to a commented file, a CRLF file
+without a final newline, a neighbouring module imported, non-assert arguments, unrunnable
+asserts, nested asserts, bad timeouts), help on every flag, the storage round trip, the CLI end to end on a fixture dataset, and the
 model arm end to end against a fake client and a scripted local HTTP server - a diff with
 wrong line numbers, a reply that is not code, a truncated reply, 5xx and message-less
 replies retried, and a run killed mid-write resuming without losing a row.
@@ -505,8 +600,8 @@ replies retried, and a run killed mid-write resuming without losing a row.
   repair run to about an hour.
 - **Hangs dominated what was left.** Mutated loop conditions hang constantly (2.6 timeouts per
   MBPP task). Killing and restarting the worker for each cost a timeout plus a restart; the
-  child now interrupts its own overrunning item with `PyThreadState_SetAsyncExc` from a watchdog thread, and the
-  parent's kill is kept only for code stuck inside one C call. And because the visible-test
+  child now interrupts its own overrunning item with `PyThreadState_SetAsyncExc` from a
+  watchdog thread, and the parent's kill is kept only for code stuck inside one C call. And because the visible-test
   regimes are prefixes of one assert order, a candidate can stop at its first failure without
   losing any regime's verdict - one timeout per hanging candidate instead of three.
 - **Results written in order look stalled.** `ThreadPoolExecutor.map` yields in submission
@@ -515,7 +610,7 @@ replies retried, and a run killed mid-write resuming without losing a row.
 - **Two different candidates had the same name.** Every alternative at one site was labelled
   `compare@40`, so a by-name lookup returned five patches for one. Labels now carry the
   alternative (`compare@40:0:LtE`).
-- **Near inputs are not enough.** Fuzzing found 85 more wrong patches on MBPP that one-step
+- **Near inputs are not enough.** Fuzzing found 82 more wrong patches on MBPP that one-step
   perturbations had passed as unproven - reported, and the reason the headline overfit rate is
   called a lower bound.
 - **The oracle was calling `int`.** The entry point was read off the first call in the first
@@ -536,6 +631,15 @@ replies retried, and a run killed mid-write resuming without losing a row.
   removing a `not` is two AST nodes, so every negated-condition task lost its fix to a
   one-node swap. The metric is now a parameter, all five are reported, and the finding is
   the sensitivity itself.
+- **Brackets nobody typed.** A second review found the token count charging an operator
+  swap for the brackets `ast.unparse` must add to keep the tree (`a + (b + c)`), and wrong
+  patches carried more of them than fixes. Grouping brackets no longer count; the old count
+  stays in the results as a robustness check, and it had been inflating finding 2.
+- **`fix` handed back a reformatted file.** Its first version compared `ast.unparse` forms, as
+  the study does, so its diff dropped every comment and had line numbers of a file nobody
+  had. It now splices each edit into the original text. It also searched happily when the
+  asserts could never run (a misspelt name) and reported "no one-edit fix" - true, and
+  useless.
 - **"Certainly wrong" that was not.** The first speed vetting timed the reference call
   alone. For `generate_matrix(793)` (MBPP 834) building the matrix is fast but comparing it
   to itself took over a second, so three correct patches were labelled overfit by timeout,
