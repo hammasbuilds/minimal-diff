@@ -11,11 +11,12 @@ guessed.
 Which plausible patch the repairer returns is a *policy*: a size metric (`METRICS`) and
 a tie-break.
 
-- **size metric**: `tokens` (fewest tokens changed), `ast` (fewest AST nodes), `lines`,
-  or a lexicographic combination (`tokens+ast`, `ast+tokens`). They disagree exactly
-  where it matters: removing a `not` is one token but two AST nodes, while swapping a
-  comparison is one of each - so `tokens+ast` ranks every un-negation below every
-  operator swap, and `tokens` does not.
+- **size metric**: `tokens` (fewest tokens changed, grouping brackets not counted), `ast`
+  (fewest AST nodes), `lines`, or a lexicographic combination (`tokens+ast`,
+  `ast+tokens`); `tokens-raw` counts brackets too and is reported as a robustness check.
+  They disagree exactly where it matters: removing a `not` is one token but two AST
+  nodes, while swapping a comparison is one of each - so `tokens+ast` ranks every
+  un-negation below every operator swap, and `tokens` does not.
 - **site order** tie-break: the earliest edit site wins. Deterministic, and arbitrary.
 - **random** tie-break (`tied_*`): the expectation over the tied set, so site order
   cannot pass for a size effect.
@@ -38,6 +39,8 @@ METRICS: dict[str, tuple[str, ...]] = {
     "lines": ("lines",),
     "tokens+ast": ("tokens", "ast_nodes"),
     "ast+tokens": ("ast_nodes", "tokens"),
+    # Robustness check only: also counts the grouping brackets `ast.unparse` adds or drops.
+    "tokens-raw": ("tokens_raw",),
 }
 # What `show`, the demo and the `smallest` fields of a results row use. Fewest tokens
 # changed is the plain reading of "the fix that changes the least".
@@ -107,6 +110,7 @@ def _metric_summary(plausible: list[Candidate], metric: str) -> dict:
     tied = [c for c in plausible if c.size_key(metric) == best]
     site = min(plausible, key=lambda c: c.order_key(metric))
     out = {
+        "site_where": site.where,
         "site_verdict": site.verdict,
         "n_tied": len(tied),
         "tied_exact": sum(c.verdict == "exact" for c in tied) / len(tied),
@@ -178,11 +182,10 @@ def repair_task(task: Task, problem: ProblemRecord, item_timeout: float | None =
         [rows[c.index] for c in judged],
         item_timeout,
     )
-    fault = set(task.fault_lines)
     for c, v in zip(judged, verdicts, strict=True):
         c.verdict, c.witness, c.found_by = v.label, v.witness, v.found_by
         c.is_truth = v.label == "exact"
-        c.size = diffmetrics.measure(task.buggy, edits[c.index].code, fault).as_dict()
+    _measure(task, edits, judged)
     truth_in_space = any(e.code == problem.reference for e in edits)
     return {
         "id": task.id,
@@ -200,3 +203,33 @@ def repair_task(task: Task, problem: ProblemRecord, item_timeout: float | None =
         "subsets": {name: summarise_subset(judged, s) for name, s in subsets.items()},
         "plausible_k1": [asdict(c) for c in judged],
     }
+
+
+def _measure(task: Task, edits: list[operators.Edit], judged: list[Candidate]) -> None:
+    fault = set(task.fault_lines)
+    for c in judged:
+        c.size = diffmetrics.measure(task.buggy, edits[c.index].code, fault).as_dict()
+
+
+def rescore(row: dict, task: Task) -> dict:
+    """`row` with every patch size and every size-based pick recomputed; nothing is re-run.
+
+    Sizes are a pure function of the buggy program and the patch, and verdicts do not
+    depend on them, so when the size measures change this gives exactly the row
+    `repair_task` would now write, without re-executing a single candidate.
+    """
+    edits = operators.neighbours(task.buggy)
+    judged = [Candidate(**c) for c in row["plausible_k1"]]
+    for c in judged:
+        if edits[c.index].where != c.where:
+            raise ValueError(
+                f"{task.id}: candidate {c.index} is {edits[c.index].where} now, "
+                f"{c.where} in the results; the repair operators have changed"
+            )
+    _measure(task, edits, judged)
+    out = dict(row)
+    out["plausible_k1"] = [asdict(c) for c in judged]
+    out["subsets"] = {
+        name: summarise_subset(judged, s) for name, s in row["subset_indices"].items()
+    }
+    return out

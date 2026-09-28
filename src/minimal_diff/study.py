@@ -226,6 +226,28 @@ def _regime(rs: list[dict], g: str, kinds: Iterable[str]) -> dict:
                 for m in METRICS
             },
         }
+    # Robustness of the default metric to the bracket rule: the same policy counting every
+    # token, grouping brackets included, paired task by task.
+    raw_exact, raw_over = (
+        _metric_verdict(g, "tokens-raw", "exact"),
+        _metric_verdict(g, "tokens-raw", "overfit"),
+    )
+    tok_exact, tok_over = (
+        _metric_verdict(g, "tokens", "exact"),
+        _metric_verdict(g, "tokens", "overfit"),
+    )
+    reg["tokens_vs_tokens_raw"] = {
+        "tasks_pick_differs": sum(
+            1
+            for r in rs
+            if (bm := r["subsets"][g].get("by_metric"))
+            and bm["tokens"]["site_where"] != bm["tokens-raw"]["site_where"]
+        ),
+        "tokens_raw_site_exact": cr(rs, raw_exact),
+        "tokens_raw_site_overfit": cr(rs, raw_over),
+        "diff_exact_tokens_minus_raw": cr(rs, _paired(g, tok_exact, raw_exact)),
+        "diff_overfit_tokens_minus_raw": cr(rs, _paired(g, tok_over, raw_over)),
+    }
     rest = [r for r in rs if r["bug_kind"] != "negate_if"]
     reg["excluding_negate_if"] = _metrics_table(rest, g) if rest else {}
     return reg
@@ -249,8 +271,69 @@ def summarise(rows: Iterable[dict]) -> dict:
             "bug_kinds": kinds,
             "regimes": {g: _regime(rs, g, kinds) for g in REGIMES},
             "patch_size_all": _sizes(rs, "all"),
+            "patch_size_plausible_all": _size_shares(rs, "all"),
         }
     return out
+
+
+def _size_shares(rs: list[dict], g: str) -> dict:
+    """How small the plausible patches are, pooled over every task, under regime `g`.
+
+    This is the scope statement in the README ("x% change exactly one token"), under both
+    token counts so the bracket rule cannot hide in it.
+    """
+    sizes = [
+        c["size"]
+        for r in rs
+        for c in r["plausible_k1"]
+        if all(c["passes"][i] for i in r["subset_indices"][g])
+    ]
+    n = len(sizes)
+
+    def share(pred) -> float | None:
+        return round(sum(1 for z in sizes if pred(z)) / n, 4) if n else None
+
+    return {
+        "patches": n,
+        "one_token": share(lambda z: z["tokens"] == 1),
+        "one_token_one_node": share(lambda z: z["tokens"] == 1 and z["ast_nodes"] == 1),
+        "one_token_raw": share(lambda z: z["tokens_raw"] == 1),
+        "one_token_raw_one_node": share(lambda z: z["tokens_raw"] == 1 and z["ast_nodes"] == 1),
+        "tokens_below_raw": share(lambda z: z["tokens"] < z["tokens_raw"]),
+    }
+
+
+def rescore_file(path: Path, tasks_by_id: dict[str, Task]) -> dict:
+    """Recompute sizes and size-based picks in a results file in place (see `repair.rescore`).
+
+    Returns how many rows there were and how many picks changed, per metric.
+    """
+    rows = read_rows(path)
+    changed: Counter = Counter()
+    new_rows = []
+    for r in rows:
+        nr = repair.rescore(r, tasks_by_id[r["id"]])
+        old = [repair.Candidate(**c) for c in r["plausible_k1"]]
+        new = [repair.Candidate(**c) for c in nr["plausible_k1"]]
+        changed["sizes"] += sum(
+            any(a.size.get(k) != v for k, v in b.size.items() if k in a.size)
+            for a, b in zip(old, new, strict=True)
+        )
+        for g, subset in r["subset_indices"].items():
+            for m, fields in METRICS.items():
+                if not old or any(f not in old[0].size for f in fields):
+                    continue  # the old rows had no such measure: nothing to compare
+                a = repair.select(old, subset, "smallest", m)
+                b = repair.select(new, subset, "smallest", m)
+                if a is not None and b is not None and a.index != b.index:
+                    changed[f"pick/{g}/{m}"] += 1
+        new_rows.append(nr)
+    tmp = path.with_suffix(".tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8") as fh:
+        for nr in new_rows:
+            fh.write(json.dumps(nr, sort_keys=True) + "\n")
+    tmp.replace(path)
+    return {"rows": len(rows), "changed": dict(sorted(changed.items()))}
 
 
 def _sizes(rs: list[dict], g: str) -> dict:

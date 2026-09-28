@@ -56,6 +56,20 @@ def cmd_repair(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rescore(a: argparse.Namespace) -> int:
+    for source in _sources(a.source):
+        path = _rows_path(source)
+        if not path.exists():
+            print(f"no {path.name}: run `minimal-diff repair` first", file=sys.stderr)
+            return 1
+        ts = {t.id: t for t in tasks.load_tasks(source)}
+        res = study.rescore_file(path, ts)
+        print(f"{source}: {res['rows']} rows re-measured in {path}")
+        for k, n in res["changed"].items():
+            print(f"  {k:<28} {n:>6} changed")
+    return 0
+
+
 def cmd_check_oracle(a: argparse.Namespace) -> int:
     probs: dict[str, tasks.ProblemRecord] = {}
     for source in SOURCES:
@@ -299,6 +313,16 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--limit", type=data.positive_int, default=None, help="first N tasks only")
     r.add_argument("--workers", type=data.positive_int, default=8, help=WORKERS_HELP)
     r.set_defaults(func=cmd_repair)
+
+    rs = sub.add_parser(
+        "rescore",
+        help="recompute patch sizes in results/classical_*.jsonl.gz without re-running anything",
+        description="Sizes are a pure function of the buggy program and the patch, and no "
+        "verdict depends on them: after a change to the size measures this rewrites every "
+        "row exactly as `repair` would, in minutes instead of an hour.",
+    )
+    rs.add_argument("--source", choices=(*SOURCES, "both"), default="both", help=SOURCE_HELP)
+    rs.set_defaults(func=cmd_rescore)
 
     rep = sub.add_parser("report", help="aggregate results into results/classical_repair.json")
     rep.set_defaults(func=cmd_report)

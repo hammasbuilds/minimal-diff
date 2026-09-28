@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 
 import pytest
@@ -98,6 +99,7 @@ def test_visible_subsets_always_include_a_failing_test(built):
 def _cand(i, verdict, tokens, at_fault=True, nodes=None):
     size = {
         "tokens": tokens,
+        "tokens_raw": tokens,
         "ast_nodes": tokens if nodes is None else nodes,
         "lines": 1,
         "unrelated_lines": 0 if at_fault else 1,
@@ -229,3 +231,25 @@ def test_oracle_self_check_finds_no_false_witness_on_a_clean_problem(built):
     rec, _, _ = built
     res = isolation.oracle_false_positives({rec.key: rec}, workers=1)
     assert res == {"problems": 1, "false_overfit": 0, "cases": []}
+
+
+def test_rescore_reproduces_the_row_repair_writes(built):
+    rec, ts, _ = built
+    for t in ts:
+        row = repair.repair_task(t, rec)
+        stale = json.loads(json.dumps(row))
+        for c in stale["plausible_k1"]:
+            c["size"] = {**c["size"], "tokens": 99, "tokens_raw": 99}
+        for g in stale["subsets"]:
+            stale["subsets"][g] = {}
+        assert repair.rescore(stale, t) == json.loads(json.dumps(row))
+
+
+def test_rescore_refuses_rows_from_different_repair_operators(built):
+    rec, ts, _ = built
+    row = repair.repair_task(ts[0], rec)
+    if not row["plausible_k1"]:
+        pytest.skip("no plausible patch in this fixture task")
+    row["plausible_k1"][0]["where"] = "renamed@0"
+    with pytest.raises(ValueError, match="operators have changed"):
+        repair.rescore(row, ts[0])

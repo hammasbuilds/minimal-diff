@@ -70,3 +70,33 @@ def test_single_child_shortcut_matches_the_full_computation(program):
 def test_unparsable_side_gives_no_ast_distance_but_still_counts_lines():
     s = dm.measure(CLAMP_REFERENCE, "def (:", set())
     assert s.ast_nodes is None and s.lines > 0 and s.tokens > 0
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "tokens", "raw"),
+    [
+        # Swapping `*` for `+` inside `a + b * c` makes unparse add brackets to keep the tree.
+        ("y = a + b * c", "y = a + (b + c)", 1, 3),
+        # Un-negating a compound condition drops `not` and its brackets.
+        ("if not (a or b):\n    pass", "if a or b:\n    pass", 1, 3),
+        # A call's brackets are code someone wrote: they count.
+        ("y = f", "y = f()", 2, 2),
+        ("y = f(a)", "y = f[a]", 2, 2),
+        # Brackets after a keyword group; after a name, a string or a closing bracket, they call.
+        ("return (x)", "return (x)", 0, 0),
+        ("y = g(x)(z)", "y = g(x)(z, 1)", 2, 2),
+    ],
+)
+def test_grouping_brackets_are_not_counted_as_tokens(old, new, tokens, raw):
+    assert dm.tokens_changed(old, new) == tokens
+    assert dm.tokens_changed(old, new, grouping=True) == raw
+    s = dm.measure(old, new, set())
+    assert (s.tokens, s.tokens_raw) == (tokens, raw)
+
+
+def test_bracket_rule_only_ever_lowers_the_count_on_real_repair_edits():
+    for program in PROGRAMS:
+        for bug in operators.inject(program):
+            for fix in operators.neighbours(bug.code):
+                s = dm.measure(bug.code, fix.code, set())
+                assert 1 <= s.tokens <= s.tokens_raw

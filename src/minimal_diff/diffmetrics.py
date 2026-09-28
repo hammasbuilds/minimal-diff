@@ -3,7 +3,9 @@
 - **lines changed**: what a reviewer sees. Per diff hunk it counts the larger side, so
   changing one line is 1, not "1 removed + 1 added". Reformatting inflates it.
 - **tokens changed**: the same, over Python tokens. `<` to `<=` is 1; renaming a variable
-  on every line it appears is one per use. Blind to whitespace and comments.
+  on every line it appears is one per use. Blind to whitespace, comments and brackets that
+  only group (which `ast.unparse` adds or drops as precedence needs); `tokens_raw` counts
+  those brackets too, as a robustness check.
 - **AST edit distance**: Zhang-Shasha tree edit distance over the syntax trees, unit
   costs. `<` to `<=` is 1 (a relabel); wrapping a condition in `not` is 2 (insert
   `UnaryOp` and `Not`). Blind to formatting entirely. Written out here rather than taken
@@ -17,6 +19,7 @@ from __future__ import annotations
 import ast
 import difflib
 import io
+import keyword
 import tokenize
 import warnings
 from dataclasses import asdict, dataclass
@@ -33,10 +36,11 @@ _SKIP_TOKENS = {
 @dataclass(frozen=True)
 class DiffSize:
     lines: int
-    tokens: int
+    tokens: int  # grouping brackets not counted (see `tokens`)
     ast_nodes: int | None  # None when either side does not parse
     unrelated_lines: int
     touches_fault: bool
+    tokens_raw: int  # every token, grouping brackets included: the robustness check
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -67,21 +71,49 @@ def changed_old_lines(old: str, new: str) -> set[int]:
     return out
 
 
-def tokens(code: str) -> list[str] | None:
+def _opens_a_call(prev: tokenize.TokenInfo | None) -> bool:
+    """Is a `(` after `prev` a call's (or a def's, a class's bases)? Otherwise it groups."""
+    if prev is None:
+        return False
+    if prev.type == tokenize.NAME:
+        return not keyword.iskeyword(prev.string)
+    return prev.type == tokenize.STRING or prev.string in (")", "]", "}")
+
+
+def tokens(code: str, grouping: bool = False) -> list[str] | None:
+    """Python tokens of `code`, without comments, newlines or (by default) grouping brackets.
+
+    A `(` that does not open a call, a definition's parameters or a class's bases - and its
+    matching `)` - only groups. Nobody types those as part of a one-operator edit, but
+    `ast.unparse` (and the splice) adds or drops them wherever the new operator's
+    precedence needs: swapping `*` for `+` in `a + b * c` gives `a + (b + c)`, which is
+    one token changed, not three. `grouping=True` keeps them (`tokens_raw`).
+    """
+    out: list[str] = []
+    stack: list[bool] = []  # per open `(`: does it only group?
+    prev: tokenize.TokenInfo | None = None
     try:
-        return [
-            t.string
-            if t.type not in (tokenize.INDENT, tokenize.DEDENT)
-            else tokenize.tok_name[t.type]
-            for t in tokenize.generate_tokens(io.StringIO(code).readline)
-            if t.type not in _SKIP_TOKENS
-        ]
+        for t in tokenize.generate_tokens(io.StringIO(code).readline):
+            if t.type in _SKIP_TOKENS:
+                continue
+            drop = False
+            if t.type == tokenize.OP and t.string == "(":
+                stack.append(not _opens_a_call(prev))
+                drop = stack[-1]
+            elif t.type == tokenize.OP and t.string == ")":
+                drop = stack.pop() if stack else False
+            prev = t
+            if drop and not grouping:
+                continue
+            is_indent = t.type in (tokenize.INDENT, tokenize.DEDENT)
+            out.append(tokenize.tok_name[t.type] if is_indent else t.string)
     except (tokenize.TokenError, IndentationError, SyntaxError):
         return None
+    return out
 
 
-def tokens_changed(old: str, new: str) -> int:
-    a, b = tokens(old), tokens(new)
+def tokens_changed(old: str, new: str, grouping: bool = False) -> int:
+    a, b = tokens(old, grouping), tokens(new, grouping)
     if a is None or b is None:  # fall back to whitespace-split words
         a, b = old.split(), new.split()
     return sum(max(i2 - i1, j2 - j1) for _, i1, i2, j1, j2 in _hunks(a, b))
@@ -209,4 +241,5 @@ def measure(old: str, new: str, fault_lines: set[int] | frozenset[int]) -> DiffS
         ast_nodes=ast_distance(old, new),
         unrelated_lines=len(touched - set(fault_lines)),
         touches_fault=bool(touched & set(fault_lines)),
+        tokens_raw=tokens_changed(old, new, grouping=True),
     )
