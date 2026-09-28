@@ -151,11 +151,16 @@ def cmd_report(a: argparse.Namespace) -> int:
 
 
 def cmd_fix(a: argparse.Namespace) -> int:
+    program = Path(a.program)
     try:
-        source = Path(a.program).read_text(encoding="utf-8")
-        tests = list(a.asserts or [])
+        # Bytes, not text mode: keep the file's own line endings so the diff applies to it.
+        source = program.read_bytes().decode("utf-8")
+        tests = [userfix.check_assert(s) for s in a.asserts or []]
         if a.tests:
-            tests += userfix.read_asserts(Path(a.tests).read_text(encoding="utf-8"))
+            found = userfix.read_asserts(Path(a.tests).read_text(encoding="utf-8"))
+            for w in found.warnings:
+                print(f"warning: {w}", file=sys.stderr)
+            tests += found.tests
         if not tests:
             print(
                 "give the asserts to repair against: --tests FILE and/or --assert STMT",
@@ -163,12 +168,27 @@ def cmd_fix(a: argparse.Namespace) -> int:
             )
             return 2
         setup = Path(a.setup).read_text(encoding="utf-8") if a.setup else ""
-        res = userfix.fix(source, tests, setup, a.metric, a.timeout)
-    except ValueError as e:
+        res = userfix.fix(
+            source,
+            tests,
+            setup,
+            a.metric,
+            a.timeout,
+            sys_path=[str(program.resolve().parent)],
+        )
+    except UnicodeDecodeError as e:
+        print(f"error: {program} is not UTF-8 text: {e}", file=sys.stderr)
+        return 2
+    except ValueError as e:  # includes userfix.Unrunnable
         print(f"error: {e}", file=sys.stderr)
         return 2
-    print(userfix.render(res, a.metric, a.top))
-    return 0
+    if a.diff:
+        if res.plausible:
+            sys.stdout.write(userfix.unified_diff(res.program, res.plausible[0].code, program.name))
+    else:
+        print(userfix.render(res, a.metric, a.top, program.name))
+    # 0: repaired or nothing to repair; 1: no one-edit patch passes.
+    return 0 if res.already_passes or res.plausible else 1
 
 
 def cmd_show(a: argparse.Namespace) -> int:
@@ -188,11 +208,18 @@ def cmd_show(a: argparse.Namespace) -> int:
     task = ts[a.task_id]
     prob = tasks.load_problems(source)[task.problem]
     row = repair.repair_task(task, prob)
-    print(render_row(task, prob, row, a.regime))
+    metrics = (a.metric,) if a.metric else (repair.DEFAULT_METRIC, "tokens+ast")
+    print(render_row(task, prob, row, a.regime, metrics))
     return 0
 
 
-def render_row(task: tasks.Task, prob: tasks.ProblemRecord, row: dict, regime: str = "all") -> str:
+def render_row(
+    task: tasks.Task,
+    prob: tasks.ProblemRecord,
+    row: dict,
+    regime: str = "all",
+    metrics: tuple[str, ...] = (repair.DEFAULT_METRIC, "tokens+ast"),
+) -> str:
     """A human-readable account of one repair: the bug, the tests, every plausible patch."""
     lines = [f"task {task.id}  (injected: {task.kind}, faulty line {task.fault_lines})", ""]
     lines += ["buggy program:", _indent(task.buggy), ""]
@@ -228,7 +255,7 @@ def render_row(task: tasks.Task, prob: tasks.ProblemRecord, row: dict, regime: s
     ]
     if not plausible:
         lines.append("smallest-first repair: no plausible patch")
-    for metric in (repair.DEFAULT_METRIC, "tokens+ast") if plausible else ():
+    for metric in metrics if plausible else ():
         pick = min(plausible, key=lambda c, m=metric: c.order_key(m))
         lines.append(
             f"smallest by {metric:<10} (ties by site order) returns {pick.where}: "
@@ -284,6 +311,13 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         help="how many visible asserts the repairer sees (default: all)",
     )
+    s.add_argument(
+        "--metric",
+        choices=sorted(repair.METRICS),
+        default=None,
+        help=f"the size metric whose pick to report (default: {repair.DEFAULT_METRIC} and "
+        "tokens+ast side by side)",
+    )
     s.set_defaults(func=cmd_show)
 
     c = sub.add_parser(
@@ -299,11 +333,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="repair your own program against your own asserts",
         description=(
             "Try every one-edit change to PROGRAM and list those that make every assert "
-            "pass, smallest first. Example: minimal-diff fix buggy.py --tests test_buggy.py"
+            "pass, smallest first. Only the edited span changes, so comments and formatting "
+            "survive and the diff applies to the file. Modules next to PROGRAM are importable. "
+            "Exit status: 0 repaired (or nothing to repair), 1 no one-edit patch passes, "
+            "2 bad input. Example: minimal-diff fix buggy.py --tests test_buggy.py"
         ),
     )
     f.add_argument("program", help="the Python file to repair")
-    f.add_argument("--tests", help="a file whose top-level `assert` statements are the tests")
+    f.add_argument(
+        "--tests",
+        help="a file whose top-level `assert` statements are the tests (nested ones are "
+        "reported and skipped)",
+    )
     f.add_argument(
         "--assert",
         dest="asserts",
@@ -320,7 +361,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     f.add_argument("--top", type=data.positive_int, default=5, help="patches to list (default 5)")
     f.add_argument(
-        "--timeout", type=float, default=2.0, help="seconds per assert before a hang (default 2)"
+        "--timeout",
+        type=data.positive_seconds,
+        default=2.0,
+        help="seconds per assert before it counts as a hang (default 2)",
+    )
+    f.add_argument(
+        "--diff",
+        action="store_true",
+        help="print only the smallest patch as a unified diff (pipe it to `git apply`)",
     )
     f.set_defaults(func=cmd_fix)
 

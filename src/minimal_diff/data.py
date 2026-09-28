@@ -46,6 +46,20 @@ def positive_int(text: str) -> int:
     return n
 
 
+def positive_seconds(text: str) -> float:
+    """argparse type for a timeout: a finite number of seconds above zero."""
+    import argparse
+    import math
+
+    try:
+        x = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected a number of seconds, got {text!r}") from None
+    if not math.isfinite(x) or x <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive number of seconds, got {text}")
+    return x
+
+
 def write_json(path: Path, obj: object) -> None:
     """Pretty JSON with LF line endings, so a rerun on Windows is byte-identical in git."""
     path.parent.mkdir(parents=True, exist_ok=True)

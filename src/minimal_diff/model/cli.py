@@ -113,25 +113,44 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     msub = m.add_subparsers(dest="model_cmd", required=True)
 
     def common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--model", default=DEFAULT_MODEL)
-        p.add_argument("--url", default=DEFAULT_URL)
+        p.add_argument(
+            "--model", default=DEFAULT_MODEL, help=f"Ollama model tag (default {DEFAULT_MODEL})"
+        )
+        p.add_argument(
+            "--url", default=DEFAULT_URL, help=f"Ollama server address (default {DEFAULT_URL})"
+        )
         p.add_argument(
             "--per-source",
             type=data.positive_int,
             default=200,
-            help="problems sampled per benchmark",
+            help="problems sampled per benchmark, one task each (default 200; a benchmark "
+            "with fewer problems gives all it has)",
         )
         p.add_argument(
-            "--prompts", nargs="+", choices=prompts.PROMPTS, default=list(prompts.PROMPTS)
+            "--prompts",
+            nargs="+",
+            choices=prompts.PROMPTS,
+            default=list(prompts.PROMPTS),
+            help="which prompt variants to run (default: all three)",
         )
-        p.add_argument("--seed", type=int, default=0)
+        p.add_argument("--seed", type=int, default=0, help="seed for the task sample (default 0)")
 
     p = msub.add_parser("plan", help="print the job list and call count; calls no model")
     common(p)
-    p.add_argument("--show", type=int, default=0, help="also print the first N prompts")
+    p.add_argument(
+        "--show",
+        type=data.positive_int,
+        default=None,
+        help="also print the first N prompts in full",
+    )
     p.set_defaults(func=cmd_plan)
 
-    r = msub.add_parser("run", help="generate (resumable, cached) and score every job")
+    r = msub.add_parser(
+        "run",
+        help="generate (resumable, cached) and score every job",
+        description="Needs Ollama serving --model. Every reply is cached under "
+        "results/model_cache, so a killed run resumes where it stopped.",
+    )
     common(r)
     r.set_defaults(func=cmd_run)
 
