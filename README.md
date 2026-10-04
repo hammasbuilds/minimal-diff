@@ -6,7 +6,7 @@
   <a href="#findings">Findings</a> &middot;
   <a href="#input--output">Input / Output</a> &middot;
   <a href="#repair-your-own-function">Repair your own function</a> &middot;
-  <a href="#the-model-arm-queued">Model arm</a> &middot;
+  <a href="#the-model-arm-qwen25-coder14b-under-three-prompts">Model arm</a> &middot;
   <a href="#quick-start">Quick start</a> &middot;
   <a href="#what-this-does-not-do">What it does NOT do</a> &middot;
   <a href="#problems-hit-while-building-this">Problems hit</a>
@@ -457,12 +457,10 @@ the part to take seriously.
 - **Exit status** 0 when a patch passes (or nothing needed fixing), 1 when no one-edit patch
   passes, 2 on bad input.
 
-## The model arm (queued)
+## The model arm: qwen2.5-coder:14b under three prompts
 
-Built, tested with a deterministic fake, not run: the GPU was in use by another job while
-this was built. `qwen2.5-coder:14b` repairs one task from each of 200 MBPP and 151 HumanEval
-problems (bug kinds balanced, seeded) under three prompts that differ only in the
-instruction:
+`qwen2.5-coder:14b` repairs one task from each of 200 MBPP and 151 HumanEval problems (bug
+kinds balanced, seeded) under three prompts that differ only in the instruction:
 
 - `plain` - "Fix the bug so that the program is correct."
 - `minimal` - "You are the laziest senior developer on the team: the best fix is the one that
@@ -470,23 +468,39 @@ instruction:
 - `diff` - the same, but the reply must be a unified diff, applied to the buggy program
   (a diff that does not apply is a failed repair).
 
-Every reply is cached on disk by (model, prompt, options) together with Ollama's
-`done_reason`, turned into a program, and scored by the same oracle, the same per-problem
-time budget and the same size measures as the search, with the search's result on the same
-tasks alongside. Up to 4,096 new tokens are allowed; a reply that still hits the limit is
-counted as `truncated`, not as a failed repair. Rows are appended as they are scored, so a
-killed run resumes, and dropped connections, 5xx replies and replies without a message are
-retried three times. 1,053 calls, listed task by task in
-`results/model_plan_qwen2.5-coder_14b.json`:
+Every reply is turned into a program and scored by the same oracle, time budget and size
+measures as the search. Run on one Quadro RTX 5000 through Ollama (Q4 weights, greedy
+decoding), 1,053 replies, none truncated. 95% intervals resample problems:
+
+| prompt | passes the visible tests | exact fix | no witness | **proven wrong (overfit)** | tokens changed | edits an unrelated line |
+|---|---|---|---|---|---:|---|
+| `plain` | 89.2% [85.8, 92.3] | 34.2% [29.1, 39.3] | 43.0% | **12.0%** [8.8, 15.4] | 26.9 | 50.4% |
+| `minimal` | 89.2% [85.8, 92.3] | **69.0%** [64.1, 73.5] | 14.5% | **5.7%** [3.4, 8.3] | 2.6 | 14.5% |
+| `diff` | 40.2% [35.0, 45.0] | 32.2% [27.1, 37.0] | 5.7% | 2.3% [0.9, 4.0] | 2.9 | 32.2% |
+| *search, smallest by tokens (same 351 tasks)* | *100%* | *80.9%* [76.9, 84.9] | | *5.1%* [3.1, 7.4] | | |
+
+> **Telling the model to change the least halves its wrong-but-passing patches, from 12.0% to
+> 5.7%, and makes its patch ten times smaller. It does not make it right more often in the
+> same proportion: passing everything the oracle tried goes from 77.2% to 83.5%.**
+
+- **"Exact" is a textual match with the known fix, not "correct".** Under `plain` the model
+  rewrites the function (27 tokens on average, an unrelated line in half the replies), so 43%
+  of its patches pass every hidden input without matching the fix. Those are "no witness",
+  not counted as right or wrong. The fair comparison is the overfit column.
+- **Asking for a diff costs more than it saves.** A quarter of `diff` replies (87) were not a
+  usable diff and another 35% did not apply or did not pass, so its low overfit rate comes
+  with passing the tests only 40% of the time.
+- **The search still wins on this benchmark**: 80.9% exact at a 5.1% overfit rate, against the
+  model's best 69.0% at 5.7%. Every fix here is one edit away by construction, which is the
+  search's home ground.
+
+Results: `results/model_arm_qwen2.5-coder_14b.json` (summary with intervals, per bug kind) and
+`results/model_qwen2.5-coder_14b.jsonl` (every reply's verdict and witness). Rerun:
 
 ```bash
 scripts/run_models.sh --dry-run    # job list and call count; touches no model
 scripts/run_models.sh              # checks free RAM, free VRAM and ollama, then runs
 ```
-
-The findings above do not depend on it. What it will add is whether an LLM's patches are
-larger than they need to be, whether telling it to be lazy makes them smaller, and whether
-smaller LLM patches overfit more or less than the search's.
 
 ## Quick start
 
@@ -584,7 +598,8 @@ replies retried, and a run killed mid-write resuming without losing a row.
   not say minimality is useless where patch sizes actually vary.
 - **It does not prove correctness.** "No witness" means a few hundred inputs did not
   separate the patch from the reference; it is its own bucket, never counted as correct.
-- **It has no model result yet.** The LLM arm is built and queued, not run.
+- **One model, one run.** The model arm is `qwen2.5-coder:14b` at Q4 with greedy decoding;
+  no other model size or family has been run.
 - **It does not sandbox against malice.** Candidates run in a child process with a timeout
   and a memory cap, not in a container. They are mutants of benchmark solutions.
 

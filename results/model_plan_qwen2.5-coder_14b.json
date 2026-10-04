@@ -7,7 +7,7 @@
     "diff"
   ],
   "calls": 1053,
-  "cached": 0,
+  "cached": 223,
   "calls_by_source_and_prompt": {
     "humaneval/diff": 151,
     "humaneval/minimal": 151,

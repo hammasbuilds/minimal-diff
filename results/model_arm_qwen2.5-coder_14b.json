@@ -1,0 +1,720 @@
+{
+  "n_rows": 1053,
+  "prompts": {
+    "plain": {
+      "n": 351,
+      "n_truncated": 0,
+      "truncated": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "rate_per_problem": 0.0
+      },
+      "parsed": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 1.0,
+        "ci95": [
+          1.0,
+          1.0
+        ],
+        "rate_per_problem": 1.0
+      },
+      "plausible": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.8917,
+        "ci95": [
+          0.8575,
+          0.9231
+        ],
+        "rate_per_problem": 0.8917
+      },
+      "exact": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.3419,
+        "ci95": [
+          0.2906,
+          0.3932
+        ],
+        "rate_per_problem": 0.3419
+      },
+      "no_witness": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.4302,
+        "ci95": [
+          0.3789,
+          0.4786
+        ],
+        "rate_per_problem": 0.4302
+      },
+      "overfit": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.1197,
+        "ci95": [
+          0.0883,
+          0.1538
+        ],
+        "rate_per_problem": 0.1197
+      },
+      "overfit_given_plausible": {
+        "n": 313,
+        "n_clusters": 313,
+        "rate": 0.1342,
+        "ci95": [
+          0.0958,
+          0.1757
+        ],
+        "rate_per_problem": 0.1342
+      },
+      "mean_tokens_changed": 26.866,
+      "mean_ast_nodes_changed": 20.689,
+      "mean_lines_changed": 3.823,
+      "mean_lines_changed_raw": 4.709,
+      "unrelated_edit_rate": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.5043,
+        "ci95": [
+          0.4501,
+          0.5556
+        ],
+        "rate_per_problem": 0.5043
+      },
+      "returned_unchanged": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "rate_per_problem": 0.0
+      },
+      "by_bug_kind": {
+        "binop": {
+          "n": 75,
+          "exact": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.3867,
+            "ci95": [
+              0.2667,
+              0.48
+            ],
+            "rate_per_problem": 0.3867
+          },
+          "overfit": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.1333,
+            "ci95": [
+              0.0667,
+              0.2133
+            ],
+            "rate_per_problem": 0.1333
+          }
+        },
+        "boolop": {
+          "n": 51,
+          "exact": {
+            "n": 51,
+            "n_clusters": 51,
+            "rate": 0.2157,
+            "ci95": [
+              0.098,
+              0.3333
+            ],
+            "rate_per_problem": 0.2157
+          },
+          "overfit": {
+            "n": 51,
+            "n_clusters": 51,
+            "rate": 0.1961,
+            "ci95": [
+              0.098,
+              0.3137
+            ],
+            "rate_per_problem": 0.1961
+          }
+        },
+        "compare": {
+          "n": 74,
+          "exact": {
+            "n": 74,
+            "n_clusters": 74,
+            "rate": 0.3919,
+            "ci95": [
+              0.2703,
+              0.5135
+            ],
+            "rate_per_problem": 0.3919
+          },
+          "overfit": {
+            "n": 74,
+            "n_clusters": 74,
+            "rate": 0.0541,
+            "ci95": [
+              0.0135,
+              0.1216
+            ],
+            "rate_per_problem": 0.0541
+          }
+        },
+        "const": {
+          "n": 76,
+          "exact": {
+            "n": 76,
+            "n_clusters": 76,
+            "rate": 0.3816,
+            "ci95": [
+              0.2763,
+              0.5
+            ],
+            "rate_per_problem": 0.3816
+          },
+          "overfit": {
+            "n": 76,
+            "n_clusters": 76,
+            "rate": 0.1184,
+            "ci95": [
+              0.0526,
+              0.2105
+            ],
+            "rate_per_problem": 0.1184
+          }
+        },
+        "negate_if": {
+          "n": 75,
+          "exact": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.2933,
+            "ci95": [
+              0.1867,
+              0.4
+            ],
+            "rate_per_problem": 0.2933
+          },
+          "overfit": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.12,
+            "ci95": [
+              0.0533,
+              0.2
+            ],
+            "rate_per_problem": 0.12
+          }
+        }
+      },
+      "classical_same_tasks": {
+        "n": 351,
+        "smallest_exact": {
+          "n": 351,
+          "n_clusters": 351,
+          "rate": 0.8091,
+          "ci95": [
+            0.7692,
+            0.849
+          ],
+          "rate_per_problem": 0.8091
+        },
+        "smallest_overfit": {
+          "n": 351,
+          "n_clusters": 351,
+          "rate": 0.0513,
+          "ci95": [
+            0.0313,
+            0.0741
+          ],
+          "rate_per_problem": 0.0513
+        }
+      }
+    },
+    "minimal": {
+      "n": 351,
+      "n_truncated": 0,
+      "truncated": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "rate_per_problem": 0.0
+      },
+      "parsed": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 1.0,
+        "ci95": [
+          1.0,
+          1.0
+        ],
+        "rate_per_problem": 1.0
+      },
+      "plausible": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.8917,
+        "ci95": [
+          0.8575,
+          0.9231
+        ],
+        "rate_per_problem": 0.8917
+      },
+      "exact": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.6895,
+        "ci95": [
+          0.641,
+          0.735
+        ],
+        "rate_per_problem": 0.6895
+      },
+      "no_witness": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.1453,
+        "ci95": [
+          0.1083,
+          0.1823
+        ],
+        "rate_per_problem": 0.1453
+      },
+      "overfit": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.057,
+        "ci95": [
+          0.0342,
+          0.0826
+        ],
+        "rate_per_problem": 0.057
+      },
+      "overfit_given_plausible": {
+        "n": 313,
+        "n_clusters": 313,
+        "rate": 0.0639,
+        "ci95": [
+          0.0383,
+          0.0927
+        ],
+        "rate_per_problem": 0.0639
+      },
+      "mean_tokens_changed": 2.638,
+      "mean_ast_nodes_changed": 2.655,
+      "mean_lines_changed": 1.231,
+      "mean_lines_changed_raw": 1.256,
+      "unrelated_edit_rate": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.1453,
+        "ci95": [
+          0.1083,
+          0.1823
+        ],
+        "rate_per_problem": 0.1453
+      },
+      "returned_unchanged": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.0171,
+        "ci95": [
+          0.0057,
+          0.0313
+        ],
+        "rate_per_problem": 0.0171
+      },
+      "by_bug_kind": {
+        "binop": {
+          "n": 75,
+          "exact": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.7733,
+            "ci95": [
+              0.6667,
+              0.8667
+            ],
+            "rate_per_problem": 0.7733
+          },
+          "overfit": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.0533,
+            "ci95": [
+              0.0133,
+              0.1067
+            ],
+            "rate_per_problem": 0.0533
+          }
+        },
+        "boolop": {
+          "n": 51,
+          "exact": {
+            "n": 51,
+            "n_clusters": 51,
+            "rate": 0.5294,
+            "ci95": [
+              0.4118,
+              0.6667
+            ],
+            "rate_per_problem": 0.5294
+          },
+          "overfit": {
+            "n": 51,
+            "n_clusters": 51,
+            "rate": 0.1176,
+            "ci95": [
+              0.0392,
+              0.2157
+            ],
+            "rate_per_problem": 0.1176
+          }
+        },
+        "compare": {
+          "n": 74,
+          "exact": {
+            "n": 74,
+            "n_clusters": 74,
+            "rate": 0.7027,
+            "ci95": [
+              0.5946,
+              0.7973
+            ],
+            "rate_per_problem": 0.7027
+          },
+          "overfit": {
+            "n": 74,
+            "n_clusters": 74,
+            "rate": 0.027,
+            "ci95": [
+              0.0,
+              0.0676
+            ],
+            "rate_per_problem": 0.027
+          }
+        },
+        "const": {
+          "n": 76,
+          "exact": {
+            "n": 76,
+            "n_clusters": 76,
+            "rate": 0.8158,
+            "ci95": [
+              0.7237,
+              0.9079
+            ],
+            "rate_per_problem": 0.8158
+          },
+          "overfit": {
+            "n": 76,
+            "n_clusters": 76,
+            "rate": 0.0263,
+            "ci95": [
+              0.0,
+              0.0658
+            ],
+            "rate_per_problem": 0.0263
+          }
+        },
+        "negate_if": {
+          "n": 75,
+          "exact": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.5733,
+            "ci95": [
+              0.4667,
+              0.68
+            ],
+            "rate_per_problem": 0.5733
+          },
+          "overfit": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.08,
+            "ci95": [
+              0.0267,
+              0.1467
+            ],
+            "rate_per_problem": 0.08
+          }
+        }
+      },
+      "classical_same_tasks": {
+        "n": 351,
+        "smallest_exact": {
+          "n": 351,
+          "n_clusters": 351,
+          "rate": 0.8091,
+          "ci95": [
+            0.7692,
+            0.849
+          ],
+          "rate_per_problem": 0.8091
+        },
+        "smallest_overfit": {
+          "n": 351,
+          "n_clusters": 351,
+          "rate": 0.0513,
+          "ci95": [
+            0.0313,
+            0.0741
+          ],
+          "rate_per_problem": 0.0513
+        }
+      }
+    },
+    "diff": {
+      "n": 351,
+      "n_truncated": 0,
+      "truncated": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "rate_per_problem": 0.0
+      },
+      "parsed": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.7521,
+        "ci95": [
+          0.7094,
+          0.7977
+        ],
+        "rate_per_problem": 0.7521
+      },
+      "plausible": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.4017,
+        "ci95": [
+          0.3504,
+          0.4501
+        ],
+        "rate_per_problem": 0.4017
+      },
+      "exact": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.3219,
+        "ci95": [
+          0.2707,
+          0.3704
+        ],
+        "rate_per_problem": 0.3219
+      },
+      "no_witness": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.057,
+        "ci95": [
+          0.0342,
+          0.0826
+        ],
+        "rate_per_problem": 0.057
+      },
+      "overfit": {
+        "n": 351,
+        "n_clusters": 351,
+        "rate": 0.0228,
+        "ci95": [
+          0.0085,
+          0.0399
+        ],
+        "rate_per_problem": 0.0228
+      },
+      "overfit_given_plausible": {
+        "n": 141,
+        "n_clusters": 141,
+        "rate": 0.0567,
+        "ci95": [
+          0.0213,
+          0.0993
+        ],
+        "rate_per_problem": 0.0567
+      },
+      "mean_tokens_changed": 2.871,
+      "mean_ast_nodes_changed": 2.837,
+      "mean_lines_changed": 0.962,
+      "mean_lines_changed_raw": 0.962,
+      "unrelated_edit_rate": {
+        "n": 264,
+        "n_clusters": 264,
+        "rate": 0.322,
+        "ci95": [
+          0.2689,
+          0.3826
+        ],
+        "rate_per_problem": 0.322
+      },
+      "returned_unchanged": {
+        "n": 264,
+        "n_clusters": 264,
+        "rate": 0.1023,
+        "ci95": [
+          0.0644,
+          0.1364
+        ],
+        "rate_per_problem": 0.1023
+      },
+      "by_bug_kind": {
+        "binop": {
+          "n": 75,
+          "exact": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.4533,
+            "ci95": [
+              0.3333,
+              0.5733
+            ],
+            "rate_per_problem": 0.4533
+          },
+          "overfit": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.04,
+            "ci95": [
+              0.0,
+              0.08
+            ],
+            "rate_per_problem": 0.04
+          }
+        },
+        "boolop": {
+          "n": 51,
+          "exact": {
+            "n": 51,
+            "n_clusters": 51,
+            "rate": 0.1765,
+            "ci95": [
+              0.0784,
+              0.2941
+            ],
+            "rate_per_problem": 0.1765
+          },
+          "overfit": {
+            "n": 51,
+            "n_clusters": 51,
+            "rate": 0.0392,
+            "ci95": [
+              0.0,
+              0.098
+            ],
+            "rate_per_problem": 0.0392
+          }
+        },
+        "compare": {
+          "n": 74,
+          "exact": {
+            "n": 74,
+            "n_clusters": 74,
+            "rate": 0.2432,
+            "ci95": [
+              0.1486,
+              0.3378
+            ],
+            "rate_per_problem": 0.2432
+          },
+          "overfit": {
+            "n": 74,
+            "n_clusters": 74,
+            "rate": 0.0135,
+            "ci95": [
+              0.0,
+              0.0541
+            ],
+            "rate_per_problem": 0.0135
+          }
+        },
+        "const": {
+          "n": 76,
+          "exact": {
+            "n": 76,
+            "n_clusters": 76,
+            "rate": 0.3947,
+            "ci95": [
+              0.2895,
+              0.5
+            ],
+            "rate_per_problem": 0.3947
+          },
+          "overfit": {
+            "n": 76,
+            "n_clusters": 76,
+            "rate": 0.0132,
+            "ci95": [
+              0.0,
+              0.0526
+            ],
+            "rate_per_problem": 0.0132
+          }
+        },
+        "negate_if": {
+          "n": 75,
+          "exact": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.2933,
+            "ci95": [
+              0.2,
+              0.4
+            ],
+            "rate_per_problem": 0.2933
+          },
+          "overfit": {
+            "n": 75,
+            "n_clusters": 75,
+            "rate": 0.0133,
+            "ci95": [
+              0.0,
+              0.04
+            ],
+            "rate_per_problem": 0.0133
+          }
+        }
+      },
+      "classical_same_tasks": {
+        "n": 351,
+        "smallest_exact": {
+          "n": 351,
+          "n_clusters": 351,
+          "rate": 0.8091,
+          "ci95": [
+            0.7692,
+            0.849
+          ],
+          "rate_per_problem": 0.8091
+        },
+        "smallest_overfit": {
+          "n": 351,
+          "n_clusters": 351,
+          "rate": 0.0513,
+          "ci95": [
+            0.0313,
+            0.0741
+          ],
+          "rate_per_problem": 0.0513
+        }
+      }
+    }
+  },
+  "model": "qwen2.5-coder:14b"
+}

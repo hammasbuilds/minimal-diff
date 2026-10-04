@@ -7,3 +7,4 @@ __pycache__/
 *.out
 *.prof
 .mypy_cache/
+results/model_cache/
