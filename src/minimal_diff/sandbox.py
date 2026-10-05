@@ -78,6 +78,10 @@ class Job:
 
 
 def _windows_job_handle(limit_bytes: int):  # pragma: no cover - platform specific
+    # Job Objects (and ctypes.WinDLL) exist only on Windows. The check also tells
+    # mypy to skip the rest of the body when type-checking for another platform.
+    if sys.platform != "win32":
+        raise OSError("Job Objects are Windows-only")
     import ctypes
     from ctypes import wintypes
 
